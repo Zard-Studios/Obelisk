@@ -196,6 +196,16 @@ final class AppModel {
         return Set(directories.filter { !gamesFolder.holds($0) }).count
     }
 
+    /// The installed games in `location`, a folder that holds games, its disk
+    /// connected or not. Two accounts' installations of one folder count once.
+    func gamesCount(in location: String) -> Int {
+        let prefix = location.hasSuffix("/") ? location : location + "/"
+        let directories = (steam.installations.receipts + steam.installations.offline).map(\.directory)
+            + (epic.installations.receipts + epic.installations.offline).map(\.directory)
+            + (gog.installations.receipts + gog.installations.offline).map(\.directory)
+        return Set(directories.filter { $0.hasPrefix(prefix) }).count
+    }
+
     /// The games whose move into the games folder waits or runs.
     var gamesMoving: Int {
         downloads.waiting.count(where: { $0.kind == .move }) + (downloads.running?.kind == .move ? 1 : 0)

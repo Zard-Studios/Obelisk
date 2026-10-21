@@ -113,12 +113,22 @@ extension GamesLocation: Identifiable {
     /// disk, as Finder shows it.
     var title: String {
         if isDefault { return L10n.string("ui.games_folder.this_mac") }
-        return GamesFolderProposal.volume(of: URL(filePath: path, directoryHint: .isDirectory)).name
+        return GamesFolderProposal.volume(of: existing).name
     }
 
     /// The space left on its disk, when it is connected.
     var availableBytes: UInt64? {
-        isConnected ? GamesFolderProposal.volume(of: URL(filePath: path, directoryHint: .isDirectory)).available : nil
+        isConnected ? GamesFolderProposal.volume(of: existing).available : nil
+    }
+
+    /// The folder, or its nearest parent there: Obelisk's own is only made
+    /// once a game needs it.
+    private var existing: URL {
+        var url = URL(filePath: path, directoryHint: .isDirectory)
+        while !FileManager.default.fileExists(atPath: url.path), url.pathComponents.count > 1 {
+            url.deleteLastPathComponent()
+        }
+        return url
     }
 }
 

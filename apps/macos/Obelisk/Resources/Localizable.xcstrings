@@ -7315,6 +7315,40 @@
         }
       }
     },
+    "ui.games_folder.new_games_here": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New games go here"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les nouveaux jeux vont ici"
+          }
+        }
+      }
+    },
+    "ui.games_folder.not_connected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not connected"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non connecté"
+          }
+        }
+      }
+    },
     "ui.games_folder.added": {
       "extractionState": "manual",
       "localizations": {

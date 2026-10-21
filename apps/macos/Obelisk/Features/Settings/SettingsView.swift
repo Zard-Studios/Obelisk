@@ -235,17 +235,20 @@ struct SettingsView: View {
     private var storage: some View {
         let moving = model.gamesMoving
         let outside = moving > 0 ? 0 : model.gamesOutsideFolder
-        return ObeliskCard {
-            gamesFolders(isMoving: moving > 0)
-            if moving > 0 {
-                ObeliskCardDivider()
-                gamesMoving(moving)
-            } else if outside > 0 {
-                ObeliskCardDivider()
-                gamesOutside(outside)
+        return VStack(alignment: .leading, spacing: 14) {
+            ObeliskCard {
+                gamesFolders(isMoving: moving > 0)
+                if moving > 0 {
+                    ObeliskCardDivider()
+                    gamesMoving(moving)
+                } else if outside > 0 {
+                    ObeliskCardDivider()
+                    gamesOutside(outside)
+                }
             }
-            ObeliskCardDivider()
-            libraryFolder
+            ObeliskCard {
+                libraryFolder
+            }
         }
     }
 
@@ -261,58 +264,68 @@ struct SettingsView: View {
             .disabled(isMoving)
     }
 
+    /// A folder that holds games, in one line: whether new games go there,
+    /// its disk's free space and its games. Its actions are in one menu.
     private func gamesLocation(_ location: GamesLocation, isMoving: Bool) -> some View {
         let folder = model.gamesFolder
+        let summary = [
+            location.isTarget ? L10n.string("ui.games_folder.new_games_here") : nil,
+            location.isConnected
+                ? location.availableBytes.map {
+                    L10n.string("ui.games_folder.available",
+                                ByteCountFormatter.string(fromByteCount: Int64(clamping: $0), countStyle: .file))
+                }
+                : L10n.string("ui.games_folder.not_connected"),
+            L10n.string("ui.library.game_count", Int64(model.gamesCount(in: location.path))),
+        ].compactMap { $0 }.joined(separator: " · ")
         return ObeliskRow(title: location.title) {
-            SymbolTile(name: location.isDefault ? "folder.fill" : "externaldrive.fill", colors: TileColors.blue)
+            SymbolTile(name: location.isDefault ? "laptopcomputer" : "externaldrive.fill", colors: TileColors.blue)
         } detail: {
-            VStack(alignment: .leading, spacing: 4) {
-                if location.isTarget {
-                    Text(L10n.string("ui.settings.games_folder_description", AppIdentity.name))
-                }
-                if !location.isConnected {
-                    Label(L10n.string("ui.settings.games_folder_disconnected"), systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                } else if let available = location.availableBytes {
-                    Text(L10n.string("ui.games_folder.available",
-                                     ByteCountFormatter.string(fromByteCount: Int64(clamping: available), countStyle: .file)))
-                }
-                FolderPath(path: location.path)
-            }
+            Text(summary)
+                .foregroundStyle(location.isConnected ? .secondary : Color.orange)
         } accessory: {
-            HStack(spacing: 8) {
-                if folder.ejectableVolume(of: location) != nil {
-                    StorefrontGlassButton(systemName: "eject", size: 13, label: L10n.string("ui.games_folder.eject"),
-                                          identifier: "settings-eject-games-folder") { folder.eject(location) }
-                        .help(L10n.string("ui.games_folder.eject"))
-                }
-                StorefrontGlassButton(systemName: "folder", size: 13, label: L10n.string("ui.settings.show_in_finder"),
-                                      identifier: "settings-show-games-folder") {
+            Menu {
+                Button(L10n.string("ui.settings.show_in_finder"), systemImage: "folder") {
                     NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: location.path)
                 }
-                .help(L10n.string("ui.settings.show_in_finder"))
                 .disabled(!location.isConnected)
-                GlassCapsuleMenu(title: L10n.string("ui.games_folder.manage"),
-                                 identifier: "settings-manage-games-folder") {
-                    Button(L10n.string("ui.games_folder.prefer")) { folder.prefer(location) }
-                        .disabled(location.isTarget || !location.isConnected)
-                    Button(L10n.string("ui.games_folder.move_all")) { folder.proposeMovingAll(to: location) }
+                if !location.isTarget {
+                    Button(L10n.string("ui.games_folder.prefer"), systemImage: "star") { folder.prefer(location) }
                         .disabled(!location.isConnected)
-                    if !location.isDefault && !location.isTarget {
-                        Divider()
-                        Button(L10n.string("ui.games_folder.remove"), role: .destructive) { folder.remove(location) }
+                }
+                Button(L10n.string("ui.games_folder.move_all"), systemImage: "arrow.right.arrow.left") {
+                    folder.proposeMovingAll(to: location)
+                }
+                .disabled(!location.isConnected)
+                if folder.ejectableVolume(of: location) != nil {
+                    Divider()
+                    Button(L10n.string("ui.games_folder.eject"), systemImage: "eject") { folder.eject(location) }
+                }
+                if !location.isDefault && !location.isTarget {
+                    Divider()
+                    Button(L10n.string("ui.games_folder.remove"), systemImage: "minus.circle", role: .destructive) {
+                        folder.remove(location)
                     }
                 }
+            } label: {
+                StorefrontGlassIcon(systemName: "ellipsis", size: 13)
+                    .foregroundStyle(.primary)
             }
+            .menuStyle(.button)
+            .obeliskButtonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel(L10n.string("ui.games_folder.manage"))
+            .accessibilityIdentifier("settings-manage-games-folder")
+            .help(L10n.string("ui.games_folder.manage"))
             .disabled(isMoving)
         }
+        .help(location.path)
     }
 
     private var addGamesFolder: some View {
         ObeliskRow(title: L10n.string("ui.games_folder.add_title")) {
             SymbolTile(name: "plus", colors: TileColors.blue)
-        } detail: {
-            Text(L10n.string("ui.games_folder.add_description"))
         } accessory: {
             GlassCapsuleButton(title: L10n.string("ui.games_folder.add"), identifier: "settings-add-games-folder") {
                 picksGamesFolder = true
