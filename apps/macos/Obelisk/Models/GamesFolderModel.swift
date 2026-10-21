@@ -15,7 +15,16 @@ protocol GamesFolderBackend: AnyObject {
     func inspectDefault() -> GamesFolderInspection
     func choose(_ folder: String) throws
     func chooseDefault() throws
-    /// Queues the move of the games still outside the games folder.
+    /// Adds the games folder `folder` gives to those that hold games, moving
+    /// nothing, and returns its path.
+    func add(_ folder: String) throws -> String
+    /// Makes `location`, one of the folders that hold games, the one new
+    /// games go to, moving nothing.
+    func prefer(_ location: String) throws
+    /// Takes `location`, a folder the player added, out of those that hold
+    /// games, once no game is left there.
+    func remove(_ location: String) throws
+    /// Queues the move of the games outside every folder that holds games.
     func gather()
     /// A disk came or left.
     func volumesChanged()
@@ -35,6 +44,9 @@ final class RustGamesFolder: GamesFolderBackend {
     func inspectDefault() -> GamesFolderInspection { core.inspectDefault() }
     func choose(_ folder: String) throws { try core.choose(chosen: folder) }
     func chooseDefault() throws { try core.chooseDefault() }
+    func add(_ folder: String) throws -> String { try core.add(chosen: folder) }
+    func prefer(_ location: String) throws { try core.prefer(location: location) }
+    func remove(_ location: String) throws { try core.remove(location: location) }
     func gather() { core.gather() }
     func volumesChanged() { core.volumesChanged() }
 }
@@ -86,9 +98,34 @@ struct GamesFolderProposal: Identifiable, Equatable {
     }
 }
 
+extension GamesLocation: Identifiable {
+    public var id: String { path }
+
+    /// How the player names it: this Mac for Obelisk's own folder, else its
+    /// disk, as Finder shows it.
+    var title: String {
+        if isDefault { return L10n.string("ui.games_folder.this_mac") }
+        return GamesFolderProposal.volume(of: URL(filePath: path, directoryHint: .isDirectory)).name
+    }
+
+    /// The space left on its disk, when it is connected.
+    var availableBytes: UInt64? {
+        isConnected ? GamesFolderProposal.volume(of: URL(filePath: path, directoryHint: .isDirectory)).available : nil
+    }
+}
+
+/// A game waiting for the player to pick the folder it installs in.
+struct InstallPlacement: Identifiable {
+    let id = UUID()
+    let gameName: String
+    /// The connected folders that hold games, the games folder first.
+    let locations: [GamesLocation]
+    let install: @MainActor (String) -> Void
+}
+
 /// Where Obelisk installs games, and the player's change of it: the folder
 /// they pick, what moving the games there does, then the moves, which run in
-/// the download queue.
+/// the download queue. Other folders the player adds hold games too.
 @MainActor @Observable
 final class GamesFolderModel {
     private(set) var path: String
@@ -96,6 +133,11 @@ final class GamesFolderModel {
     private(set) var isDefault: Bool
     /// Whether the folder's disk is there: Obelisk's own folder always is.
     private(set) var isConnected: Bool
+    /// Every folder that holds games: Obelisk's own, then the one new games
+    /// go to, then those the player added.
+    private(set) var locations: [GamesLocation]
+    /// A game waiting for the player to pick the folder it installs in.
+    var placement: InstallPlacement?
     /// The folder the player picked, waiting for them to agree.
     var proposal: GamesFolderProposal?
     /// Why the last folder the player picked was not taken.
@@ -116,6 +158,7 @@ final class GamesFolderModel {
         path = state.path
         isDefault = state.isDefault
         isConnected = state.isConnected
+        locations = state.locations
         revision = state.revision
         observation = Task { [weak self, backend] in
             var after = self?.revision ?? 0
@@ -146,14 +189,76 @@ final class GamesFolderModel {
         if path != state.path { path = state.path }
         if isDefault != state.isDefault { isDefault = state.isDefault }
         if isConnected != state.isConnected { isConnected = state.isConnected }
+        if locations != state.locations { locations = state.locations }
     }
 
     /// The games folder's new state follows through `changed(after:)`.
     private func volumesChanged() { backend.volumesChanged() }
 
-    /// Whether `directory`, an installation's folder, is inside the games folder.
+    /// Whether `directory`, an installation's folder, is inside one of the
+    /// folders that hold games.
     func holds(_ directory: String) -> Bool {
-        directory.hasPrefix(path.hasSuffix("/") ? path : path + "/")
+        locations.contains { Self.location($0.path, holds: directory) }
+    }
+
+    private static func location(_ location: String, holds directory: String) -> Bool {
+        directory.hasPrefix(location.hasSuffix("/") ? location : location + "/")
+    }
+
+    /// The folders a game in `directory` may move to: those that hold games
+    /// whose disk is there, but its own.
+    func destinations(from directory: String) -> [GamesLocation] {
+        locations.filter { $0.isConnected && !Self.location($0.path, holds: directory) }
+    }
+
+    /// Installs `gameName` through `install`, in the folder the player picks
+    /// when several connected ones hold games; nil goes to the games folder.
+    func place(_ gameName: String, install: @escaping @MainActor (String?) -> Void) {
+        let connected = locations.filter(\.isConnected).sorted { $0.isTarget && !$1.isTarget }
+        guard connected.count > 1 else { return install(nil) }
+        placement = InstallPlacement(gameName: gameName, locations: connected, install: { install($0) })
+    }
+
+    /// Adds the folder the player picked to those that hold games: no game moves.
+    func add(_ folder: URL) {
+        failure = nil
+        do {
+            _ = try backend.add(folder.path)
+            apply(backend.state())
+        } catch {
+            failure = L10n.string("model.gamesFolder.failed", L10n.message(Self.reason(error)))
+        }
+    }
+
+    /// New games go to `location`: no game moves.
+    func prefer(_ location: GamesLocation) {
+        failure = nil
+        do {
+            try backend.prefer(location.path)
+            apply(backend.state())
+        } catch {
+            failure = L10n.string("model.gamesFolder.failed", L10n.message(Self.reason(error)))
+        }
+    }
+
+    /// Takes a folder the player added out of those that hold games, once empty.
+    func remove(_ location: GamesLocation) {
+        failure = nil
+        do {
+            try backend.remove(location.path)
+            apply(backend.state())
+        } catch {
+            failure = L10n.string("model.gamesFolder.failed", L10n.message(Self.reason(error)))
+        }
+    }
+
+    /// Asks the player to move every game to `location`.
+    func proposeMovingAll(to location: GamesLocation) {
+        if location.isDefault {
+            proposeDefault()
+        } else {
+            propose(URL(filePath: location.path, directoryHint: .isDirectory))
+        }
     }
 
     /// Asks the player to move the games to the folder they picked.

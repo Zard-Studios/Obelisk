@@ -6,7 +6,7 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
-use game_runtime::games_folder::{self, Candidate, ChoiceFailure, Refusal};
+use game_runtime::games_folder::{self, Candidate, ChoiceFailure, Location, Refusal};
 
 use crate::GameSessionError;
 
@@ -32,6 +32,21 @@ pub struct GamesFolderState {
     pub is_default: bool,
     /// Its disk is there: Obelisk's own folder always is.
     pub is_connected: bool,
+    /// Every folder that holds games: Obelisk's own, then the one new
+    /// installations go to, then those the player added.
+    pub locations: Vec<GamesLocation>,
+}
+
+/// One folder that holds games.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct GamesLocation {
+    pub path: String,
+    /// Obelisk's own folder, inside its library.
+    pub is_default: bool,
+    /// New installations go there.
+    pub is_target: bool,
+    /// Its disk is there: Obelisk's own folder always is.
+    pub is_connected: bool,
 }
 
 impl From<games_folder::View> for GamesFolderState {
@@ -41,6 +56,18 @@ impl From<games_folder::View> for GamesFolderState {
             path: view.path.to_string_lossy().into_owned(),
             is_default: view.default,
             is_connected: view.connected,
+            locations: view.locations.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<Location> for GamesLocation {
+    fn from(location: Location) -> Self {
+        Self {
+            path: location.path.to_string_lossy().into_owned(),
+            is_default: location.default,
+            is_target: location.target,
+            is_connected: location.connected,
         }
     }
 }
@@ -69,7 +96,7 @@ impl From<Result<Candidate, Refusal>> for GamesFolderInspection {
                 games: candidate.games,
                 copied_bytes: candidate.copied_bytes,
             },
-            Err(Refusal::Missing) => Self::Missing,
+            Err(Refusal::Missing | Refusal::Occupied) => Self::Missing,
             Err(Refusal::Inside) => Self::Inside,
         }
     }
@@ -125,7 +152,33 @@ impl GamesFolder {
         self.folder.choose_default().map_err(choice_failure)
     }
 
-    /// Queues the move of the installations still outside the games folder.
+    /// Adds the games folder `chosen` gives to those that hold games, moving
+    /// nothing, and returns its path.
+    pub fn add(&self, chosen: String) -> Result<String, GameSessionError> {
+        self.folder
+            .add(Path::new(&chosen))
+            .map(|path| path.to_string_lossy().into_owned())
+            .map_err(choice_failure)
+    }
+
+    /// Makes `location`, one of the folders that hold games, the one new
+    /// installations go to, moving nothing.
+    pub fn prefer(&self, location: String) -> Result<(), GameSessionError> {
+        self.folder
+            .prefer(Path::new(&location))
+            .map_err(choice_failure)
+    }
+
+    /// Takes `location`, a folder the player added, out of those that hold
+    /// games, once no installation is left there.
+    pub fn remove(&self, location: String) -> Result<(), GameSessionError> {
+        self.folder
+            .remove(Path::new(&location))
+            .map_err(choice_failure)
+    }
+
+    /// Queues the move of the installations outside every folder that holds
+    /// games into the games folder.
     pub fn gather(&self) {
         self.folder.gather()
     }
@@ -138,6 +191,9 @@ impl GamesFolder {
 
 fn choice_failure(failure: ChoiceFailure) -> GameSessionError {
     match failure {
+        ChoiceFailure::Refused(Refusal::Occupied) => {
+            GameSessionError::new("model.gamesFolder.occupied")
+        }
         ChoiceFailure::Refused(_) => GameSessionError::new("model.gamesFolder.refused"),
         ChoiceFailure::Io(error) => GameSessionError::new(error),
     }

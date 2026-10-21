@@ -32,7 +32,7 @@ impl Resident for Account {
     fn installations(&self) -> Vec<(PathBuf, u64)> {
         self.installations.clone()
     }
-    fn gather(self: Arc<Self>, folder: &Path) {
+    fn gather(self: Arc<Self>, folder: &Path, _kept: &[PathBuf]) {
         self.gathered.lock().unwrap().push(folder.to_owned());
     }
     fn refresh(&self) {
@@ -233,4 +233,134 @@ fn only_a_missing_external_disk_is_disconnected() {
         "/Users/someone/Games/steam-620-macos"
     )));
     assert!(!disconnected(Path::new("/Volumes")));
+}
+
+#[test]
+fn an_added_folder_holds_games_beside_the_games_folder_and_moves_nothing() {
+    let places = places();
+    let folder = GamesFolder::new(&places.library);
+    let account = registered(&folder, Account::default());
+    let added = folder.add(&places.elsewhere).unwrap();
+    assert_eq!(added, places.elsewhere.join(CHOSEN_DIRECTORY));
+    assert!(added.is_dir());
+    assert!(account.gathered.lock().unwrap().is_empty(), "nothing moves");
+    let own = places.library.join("Games");
+    assert_eq!(folder.path(), own, "new games still go to Obelisk's own");
+    assert_eq!(folder.locations(), [own.clone(), added.clone()]);
+    let view = folder.view();
+    assert_eq!(
+        view.locations,
+        [
+            Location {
+                path: own.clone(),
+                default: true,
+                target: true,
+                connected: true
+            },
+            Location {
+                path: added.clone(),
+                default: false,
+                target: false,
+                connected: true
+            },
+        ]
+    );
+    // Adding it again changes nothing, and it stays at the next start.
+    assert_eq!(folder.add(&added).unwrap(), added);
+    assert_eq!(GamesFolder::new(&places.library).locations(), [own, added]);
+}
+
+#[test]
+fn a_preferred_folder_takes_new_games_and_the_previous_one_stays() {
+    let places = places();
+    let folder = GamesFolder::new(&places.library);
+    let added = folder.add(&places.elsewhere).unwrap();
+    folder.prefer(&added).unwrap();
+    assert_eq!(folder.path(), added);
+    let own = places.library.join("Games");
+    assert_eq!(folder.locations(), [own.clone(), added.clone()]);
+    assert!(
+        folder.prefer(&places.library).is_err(),
+        "not a folder of games"
+    );
+
+    let reloaded = GamesFolder::new(&places.library);
+    assert_eq!(reloaded.path(), added);
+    reloaded.prefer(&own).unwrap();
+    assert_eq!(reloaded.path(), own);
+    assert_eq!(reloaded.locations(), [own, added]);
+}
+
+#[test]
+fn an_added_folder_is_removed_only_once_empty_and_moving_everything_drops_the_others() {
+    let places = places();
+    let folder = GamesFolder::new(&places.library);
+    let added = folder.add(&places.elsewhere).unwrap();
+    let game = added.join("Steam/steam-620-macos");
+    fs::create_dir_all(&game).unwrap();
+    let _account = registered(
+        &folder,
+        Account {
+            installations: vec![(game.clone(), 100)],
+            ..Account::default()
+        },
+    );
+    assert!(matches!(
+        folder.remove(&added),
+        Err(ChoiceFailure::Refused(Refusal::Occupied))
+    ));
+    assert!(matches!(
+        folder.remove(&places.library.join("Games")),
+        Err(ChoiceFailure::Refused(Refusal::Missing))
+    ));
+
+    // Everything moving to Obelisk's own folder leaves no other.
+    folder.choose_default().unwrap();
+    assert_eq!(folder.locations(), [places.library.join("Games")]);
+    assert!(!places.library.join(FILE).exists());
+}
+
+#[test]
+fn an_emptied_added_folder_goes_with_its_obelisk_folders() {
+    let places = places();
+    let folder = GamesFolder::new(&places.library);
+    let added = folder.add(&places.elsewhere).unwrap();
+    fs::create_dir_all(added.join("Steam")).unwrap();
+    folder.remove(&added).unwrap();
+    assert!(!added.exists());
+    assert_eq!(folder.locations(), [places.library.join("Games")]);
+}
+
+#[test]
+fn a_games_folder_saved_before_added_folders_still_loads() {
+    let places = places();
+    let chosen = places.elsewhere.join(CHOSEN_DIRECTORY);
+    fs::create_dir_all(&chosen).unwrap();
+    fs::write(
+        places.library.join(FILE),
+        serde_json::to_vec(&serde_json::json!({ "path": chosen })).unwrap(),
+    )
+    .unwrap();
+    let folder = GamesFolder::new(&places.library);
+    assert_eq!(folder.path(), chosen);
+    assert_eq!(folder.locations(), [places.library.join("Games"), chosen]);
+}
+
+#[test]
+fn a_move_finds_its_installation_in_an_added_folder() {
+    let places = places();
+    let folder = GamesFolder::new(&places.library);
+    let added = folder.add(&places.elsewhere).unwrap();
+    let moved = added.join("Steam/steam-620-macos");
+    fs::create_dir_all(&moved).unwrap();
+    assert_eq!(
+        folder.installation(
+            "Steam",
+            Path::new("/Volumes/Gone/Obelisk Games/Steam/steam-620-macos")
+        ),
+        Some(moved)
+    );
+    // Its own folder stays as it empties.
+    folder.tidy(&added.join("Steam"));
+    assert!(added.is_dir());
 }

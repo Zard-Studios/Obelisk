@@ -57,6 +57,14 @@ struct GameManagementItems: View {
             }
             Button(L10n.string("ui.game.verify_files"), systemImage: "checkmark.shield", action: management.verify)
                 .disabled(!management.canVerify)
+            if !management.moves.isEmpty {
+                Menu(L10n.string("ui.game.move_to"), systemImage: "externaldrive") {
+                    ForEach(management.moves) { move in
+                        Button(move.title, action: move.move)
+                            .help(move.path)
+                    }
+                }
+            }
             Divider()
             Button(L10n.string("ui.game.uninstall"), systemImage: "trash", role: .destructive) {
                 confirmsRemoval = true

@@ -71,6 +71,7 @@ struct RootView: View {
         .sheet(isPresented: Binding(get: { model.presentedPrompt != nil }, set: { _ in })) {
             prompt.interactiveDismissDisabled()
         }
+        .installPlacement(Bindable(model.gamesFolder).placement)
     }
 
     @ViewBuilder private var prompt: some View {
@@ -104,6 +105,30 @@ struct RootView: View {
             RosettaPromptView(model: model.gog.rosetta, storefront: "gog")
         case nil:
             EmptyView()
+        }
+    }
+}
+
+private extension View {
+    /// Asks the player which folder a game installs in, with each one's free
+    /// space, when several connected ones hold games.
+    func installPlacement(_ placement: Binding<InstallPlacement?>) -> some View {
+        let shown = placement.wrappedValue
+        return confirmationDialog(L10n.string("ui.games_folder.install_where", shown?.gameName ?? ""),
+                                  isPresented: Binding(get: { placement.wrappedValue != nil },
+                                                       set: { if !$0 { placement.wrappedValue = nil } }),
+                                  titleVisibility: .visible, presenting: shown) { shown in
+            ForEach(shown.locations) { location in
+                Button(location.availableBytes.map {
+                    L10n.string("ui.games_folder.install_location", location.title,
+                                ByteCountFormatter.string(fromByteCount: Int64(clamping: $0), countStyle: .file))
+                } ?? location.title) {
+                    shown.install(location.path)
+                }
+            }
+            Button(L10n.string("ui.common.cancel"), role: .cancel) {}
+        } message: { _ in
+            Text(L10n.string("ui.games_folder.install_where_message"))
         }
     }
 }

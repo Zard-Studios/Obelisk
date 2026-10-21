@@ -11,7 +11,7 @@ struct SettingsView: View {
     @Bindable var model: AppModel
     @State private var showsBackdrop = false
     @State private var showsTitle = false
-    /// The player picks another folder for the games.
+    /// The player picks another folder to hold games.
     @State private var picksGamesFolder = false
 
     /// The hero's height below the bar it reaches under.
@@ -103,7 +103,7 @@ struct SettingsView: View {
         }
         .ignoresSafeArea(.container, edges: .top)
         .fileImporter(isPresented: $picksGamesFolder, allowedContentTypes: [.folder]) { result in
-            if case let .success(folder) = result { model.gamesFolder.propose(folder) }
+            if case let .success(folder) = result { model.gamesFolder.add(folder) }
         }
         .fileDialogMessage(L10n.string("ui.settings.games_folder_pick", AppIdentity.name))
         .fileDialogConfirmationLabel(L10n.string("ui.settings.games_folder_pick_confirm"))
@@ -229,7 +229,7 @@ struct SettingsView: View {
         let moving = model.gamesMoving
         let outside = moving > 0 ? 0 : model.gamesOutsideFolder
         return ObeliskCard {
-            gamesFolder(isMoving: moving > 0)
+            gamesFolders(isMoving: moving > 0)
             if moving > 0 {
                 ObeliskCardDivider()
                 gamesMoving(moving)
@@ -242,38 +242,69 @@ struct SettingsView: View {
         }
     }
 
-    private func gamesFolder(isMoving: Bool) -> some View {
+    /// Each folder that holds games, then the row that adds another.
+    @ViewBuilder private func gamesFolders(isMoving: Bool) -> some View {
+        let locations = model.gamesFolder.locations
+        ForEach(locations) { location in
+            if location.id != locations.first?.id { ObeliskCardDivider() }
+            gamesLocation(location, isMoving: isMoving)
+        }
+        ObeliskCardDivider()
+        addGamesFolder
+            .disabled(isMoving)
+    }
+
+    private func gamesLocation(_ location: GamesLocation, isMoving: Bool) -> some View {
         let folder = model.gamesFolder
-        return ObeliskRow(title: L10n.string("ui.settings.games_folder")) {
-            SymbolTile(name: folder.isDefault ? "folder.fill" : "externaldrive.fill", colors: TileColors.blue)
+        return ObeliskRow(title: location.title) {
+            SymbolTile(name: location.isDefault ? "folder.fill" : "externaldrive.fill", colors: TileColors.blue)
         } detail: {
             VStack(alignment: .leading, spacing: 4) {
-                Text(L10n.string("ui.settings.games_folder_description", AppIdentity.name))
-                if !folder.isConnected {
+                if location.isTarget {
+                    Text(L10n.string("ui.settings.games_folder_description", AppIdentity.name))
+                }
+                if !location.isConnected {
                     Label(L10n.string("ui.settings.games_folder_disconnected"), systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
+                } else if let available = location.availableBytes {
+                    Text(L10n.string("ui.games_folder.available",
+                                     ByteCountFormatter.string(fromByteCount: Int64(clamping: available), countStyle: .file)))
                 }
-                FolderPath(path: folder.path)
+                FolderPath(path: location.path)
             }
         } accessory: {
             HStack(spacing: 8) {
                 StorefrontGlassButton(systemName: "folder", size: 13, label: L10n.string("ui.settings.show_in_finder"),
                                       identifier: "settings-show-games-folder") {
-                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: folder.path)
+                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: location.path)
                 }
                 .help(L10n.string("ui.settings.show_in_finder"))
-                if folder.isDefault {
-                    GlassCapsuleButton(title: L10n.string("ui.settings.games_folder_change"),
-                                       identifier: "settings-change-games-folder") { picksGamesFolder = true }
-                } else {
-                    GlassCapsuleMenu(title: L10n.string("ui.settings.games_folder_change"),
-                                     identifier: "settings-change-games-folder") {
-                        Button(L10n.string("ui.settings.games_folder_choose")) { picksGamesFolder = true }
-                        Button(L10n.string("ui.settings.games_folder_back")) { folder.proposeDefault() }
+                .disabled(!location.isConnected)
+                GlassCapsuleMenu(title: L10n.string("ui.games_folder.manage"),
+                                 identifier: "settings-manage-games-folder") {
+                    Button(L10n.string("ui.games_folder.prefer")) { folder.prefer(location) }
+                        .disabled(location.isTarget || !location.isConnected)
+                    Button(L10n.string("ui.games_folder.move_all")) { folder.proposeMovingAll(to: location) }
+                        .disabled(!location.isConnected)
+                    if !location.isDefault && !location.isTarget {
+                        Divider()
+                        Button(L10n.string("ui.games_folder.remove"), role: .destructive) { folder.remove(location) }
                     }
                 }
             }
             .disabled(isMoving)
+        }
+    }
+
+    private var addGamesFolder: some View {
+        ObeliskRow(title: L10n.string("ui.games_folder.add_title")) {
+            SymbolTile(name: "plus", colors: TileColors.blue)
+        } detail: {
+            Text(L10n.string("ui.games_folder.add_description"))
+        } accessory: {
+            GlassCapsuleButton(title: L10n.string("ui.games_folder.add"), identifier: "settings-add-games-folder") {
+                picksGamesFolder = true
+            }
         }
     }
 

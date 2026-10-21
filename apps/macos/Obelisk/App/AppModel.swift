@@ -117,6 +117,17 @@ final class AppModel {
         self.downloads.progress = { [weak self] item in self?.downloadTransfer(item) }
         applyAutomaticUpdates()
         reportPerformance()
+        placeGames(self.steam.installations)
+        placeGames(self.epic.installations)
+        placeGames(self.gog.installations)
+    }
+
+    /// Each storefront installs a game in the folder the player picks among
+    /// those that hold games, and moves one to the others.
+    private func placeGames<Store: InstallationStorefront>(_ installations: GameInstallations<Store>) {
+        let gamesFolder = gamesFolder
+        installations.placement = { name, install in gamesFolder.place(name, install: install) }
+        installations.destinations = { gamesFolder.destinations(from: $0) }
     }
 
     /// Each storefront's ended games go to the performance reports, with the

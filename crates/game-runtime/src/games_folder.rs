@@ -3,8 +3,10 @@
 //! storefront keeps its games in its own folder inside it. Choosing another
 //! queues the move of every installation outside it, one game at a time in
 //! the download queue, and points the new installations still waiting there.
-//! An installation whose disk is not connected shows as not installed until
-//! the disk comes back.
+//! The player may also add other folders that hold games without moving any:
+//! a game then installs in, or moves to, the one they pick. An installation
+//! whose disk is not connected shows as not installed until the disk comes
+//! back.
 use crate::supervisor::plain_absolute;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -25,6 +27,9 @@ const FILE: &str = "games-folder.json";
 #[derive(Serialize, Deserialize)]
 struct Saved {
     path: PathBuf,
+    /// The other folders the player added.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    added: Vec<PathBuf>,
 }
 
 /// Where new installations go, as the player sees it. `revision` grows with
@@ -37,18 +42,54 @@ pub struct View {
     pub default: bool,
     /// Its disk is there: Obelisk's own folder always is.
     pub connected: bool,
+    /// Every folder that holds games: Obelisk's own, then the one new
+    /// installations go to, then those the player added.
+    pub locations: Vec<Location>,
 }
 
-/// `path` as the player sees it, at `revision`: Obelisk's own folder when it
-/// is `default`.
-fn view(path: PathBuf, default: &Path, revision: u64) -> View {
+/// One folder that holds games, as the player sees it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Location {
+    pub path: PathBuf,
+    /// Obelisk's own folder, inside its library.
+    pub default: bool,
+    /// New installations go there.
+    pub target: bool,
+    /// Its disk is there: Obelisk's own folder always is.
+    pub connected: bool,
+}
+
+/// `path` as the player sees it, with the folders the player `added`, at
+/// `revision`: Obelisk's own folder when it is `default`.
+fn view(path: PathBuf, added: &[PathBuf], default: &Path, revision: u64) -> View {
+    let locations = listed(&path, added, default)
+        .into_iter()
+        .map(|location| Location {
+            default: location == default,
+            target: location == path,
+            connected: location == default || location.is_dir(),
+            path: location,
+        })
+        .collect();
     let default = path == default;
     View {
         revision,
         connected: default || path.is_dir(),
         default,
         path,
+        locations,
     }
+}
+
+/// Obelisk's own folder `default`, then `path`, then those `added`, each once.
+fn listed(path: &Path, added: &[PathBuf], default: &Path) -> Vec<PathBuf> {
+    let mut locations = vec![default.to_owned()];
+    for location in std::iter::once(path).chain(added.iter().map(PathBuf::as_path)) {
+        if !locations.iter().any(|kept| kept == location) {
+            locations.push(location.to_owned());
+        }
+    }
+    locations
 }
 
 /// What choosing a folder would do.
@@ -71,15 +112,18 @@ pub enum Refusal {
     Missing,
     /// It is inside Obelisk's library, or inside a game's installation.
     Inside,
+    /// It still holds installations.
+    Occupied,
 }
 
 /// An account's installations, as the games folder moves and finds them.
 pub(crate) trait Resident: Send + Sync {
     /// The connected installations' folders, with their bytes.
     fn installations(&self) -> Vec<(PathBuf, u64)>;
-    /// Queues the move into `folder` of each installation outside it, and
-    /// points the new installations still waiting there.
-    fn gather(self: Arc<Self>, folder: &Path);
+    /// Queues the move into `folder` of each installation outside it and
+    /// outside every folder `kept`, and points the new installations still
+    /// waiting there.
+    fn gather(self: Arc<Self>, folder: &Path, kept: &[PathBuf]);
     /// Hides the installations whose disk left, and shows those whose disk
     /// came back.
     fn refresh(&self);
@@ -88,6 +132,8 @@ pub(crate) trait Resident: Send + Sync {
 /// Obelisk's games folder, which every account's installations share.
 pub struct GamesFolder {
     library: PathBuf,
+    /// The other folders the player added, in their order.
+    added: Mutex<Vec<PathBuf>>,
     published: watch::Sender<View>,
     residents: Mutex<Vec<Weak<dyn Resident>>>,
 }
@@ -100,18 +146,31 @@ impl GamesFolder {
             .canonicalize()
             .unwrap_or_else(|_| library.to_owned());
         let default = library.join(DEFAULT_DIRECTORY);
-        let path = fs::read(library.join(FILE))
+        let saved = fs::read(library.join(FILE))
             .ok()
-            .and_then(|bytes| serde_json::from_slice::<Saved>(&bytes).ok())
-            .map(|saved| saved.path)
+            .and_then(|bytes| serde_json::from_slice::<Saved>(&bytes).ok());
+        let path = saved
+            .as_ref()
+            .map(|saved| saved.path.clone())
             .filter(|path| plain_absolute(path) && *path != default)
             .unwrap_or_else(|| default.clone());
+        let added: Vec<PathBuf> = saved
+            .map(|saved| saved.added)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|added| plain_absolute(added))
+            .collect();
+        let added: Vec<PathBuf> = listed(&path, &added, &default)
+            .into_iter()
+            .filter(|location| *location != path && *location != default)
+            .collect();
         // A disk that sleeps wakes slowly: Obelisk's start does not wait.
-        let games = path.clone();
-        std::thread::spawn(move || clear_staging(&games));
+        let games = listed(&path, &added, &default);
+        std::thread::spawn(move || games.iter().for_each(|games| clear_staging(games)));
         Arc::new(Self {
             library,
-            published: watch::channel(view(path, &default, 1)).0,
+            published: watch::channel(view(path, &added, &default, 1)).0,
+            added: Mutex::new(added),
             residents: Mutex::new(Vec::new()),
         })
     }
@@ -148,10 +207,25 @@ impl GamesFolder {
         self.library.join(DEFAULT_DIRECTORY)
     }
 
-    /// Publishes `path` as the games folder, and whether its disk is
-    /// connected.
+    /// Every folder that holds games: Obelisk's own, then the one new
+    /// installations go to, then those the player added.
+    pub fn locations(&self) -> Vec<PathBuf> {
+        let added = self.added.lock().unwrap();
+        listed(&self.path(), &added, &self.default_path())
+    }
+
+    /// Whether new installations can go to `location`, one of the folders
+    /// that hold games, now: Obelisk's own folder is made when needed, any
+    /// other must be there.
+    pub fn connected_at(&self, location: &Path) -> bool {
+        location == self.default_path() || location.is_dir()
+    }
+
+    /// Publishes `path` as the games folder, the folders the player added,
+    /// and whether their disks are connected.
     fn publish(&self, path: PathBuf) {
-        let mut next = view(path, &self.default_path(), 0);
+        let added = self.added.lock().unwrap().clone();
+        let mut next = view(path, &added, &self.default_path(), 0);
         self.published.send_if_modified(|current| {
             next.revision = current.revision;
             if next == *current {
@@ -244,12 +318,100 @@ impl GamesFolder {
 
     /// Makes the games folder `chosen` gives the one new installations go
     /// to, and queues the move into it of every installation outside it.
+    /// Every installation goes there, so no folder the player added stays.
     pub fn choose(&self, chosen: &Path) -> Result<(), ChoiceFailure> {
         let (path, _) = self.destination(chosen)?;
         fs::create_dir_all(&path)?;
-        self.save(&path)?;
-        self.publish(path);
-        self.gather();
+        let added = std::mem::take(&mut *self.added.lock().unwrap());
+        if let Err(error) = self.save(&path) {
+            *self.added.lock().unwrap() = added;
+            return Err(error.into());
+        }
+        self.publish(path.clone());
+        for resident in self.residents() {
+            resident.gather(&path, &[]);
+        }
+        Ok(())
+    }
+
+    /// Adds the games folder `chosen` gives to those that hold games,
+    /// moving nothing, and returns it. One already there stays as it is.
+    pub fn add(&self, chosen: &Path) -> Result<PathBuf, ChoiceFailure> {
+        let (path, _) = self.destination(chosen)?;
+        if self.locations().contains(&path) {
+            return Ok(path);
+        }
+        fs::create_dir_all(&path)?;
+        self.added.lock().unwrap().push(path.clone());
+        if let Err(error) = self.save(&self.path()) {
+            self.added.lock().unwrap().retain(|added| *added != path);
+            return Err(error.into());
+        }
+        self.publish(self.path());
+        Ok(path)
+    }
+
+    /// Makes `location`, one of the folders that hold games, the one new
+    /// installations go to, moving nothing.
+    pub fn prefer(&self, location: &Path) -> Result<(), ChoiceFailure> {
+        let previous = self.path();
+        if location == previous {
+            return Ok(());
+        }
+        if !self.locations().iter().any(|listed| listed == location) {
+            return Err(Refusal::Missing.into());
+        }
+        let before = self.added.lock().unwrap().clone();
+        {
+            let mut added = self.added.lock().unwrap();
+            added.retain(|added| added != location);
+            if previous != self.default_path() {
+                added.insert(0, previous);
+            }
+        }
+        if let Err(error) = self.save(location) {
+            *self.added.lock().unwrap() = before;
+            return Err(error.into());
+        }
+        self.publish(location.to_owned());
+        Ok(())
+    }
+
+    /// Takes `location`, a folder the player added, out of those that hold
+    /// games, once no installation is left there. Its emptied folders go.
+    pub fn remove(&self, location: &Path) -> Result<(), ChoiceFailure> {
+        if !self
+            .added
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|added| added == location)
+        {
+            return Err(Refusal::Missing.into());
+        }
+        let occupied = self
+            .residents()
+            .iter()
+            .flat_map(|resident| resident.installations())
+            .any(|(installation, _)| installation.starts_with(location));
+        if occupied {
+            return Err(Refusal::Occupied.into());
+        }
+        let before = self.added.lock().unwrap().clone();
+        self.added.lock().unwrap().retain(|added| added != location);
+        if let Err(error) = self.save(&self.path()) {
+            *self.added.lock().unwrap() = before;
+            return Err(error.into());
+        }
+        if self.ours(location)
+            && let Ok(storefronts) = fs::read_dir(location)
+        {
+            for storefront in storefronts.flatten() {
+                let _ = fs::remove_dir(storefront.path());
+            }
+            let _ = fs::remove_dir(location);
+        }
+        self.publish(self.path());
         Ok(())
     }
 
@@ -261,11 +423,12 @@ impl GamesFolder {
         self.choose(&path)
     }
 
-    /// Queues the move of the installations still outside the games folder.
+    /// Queues the move into the games folder of the installations outside
+    /// every folder that holds games.
     pub fn gather(&self) {
-        let path = self.path();
+        let (path, kept) = (self.path(), self.locations());
         for resident in self.residents() {
-            resident.gather(&path);
+            resident.gather(&path, &kept);
         }
     }
 
@@ -280,7 +443,8 @@ impl GamesFolder {
 
     fn save(&self, path: &Path) -> io::Result<()> {
         let file = self.library.join(FILE);
-        if path == self.default_path() {
+        let added = self.added.lock().unwrap().clone();
+        if path == self.default_path() && added.is_empty() {
             return match fs::remove_file(&file) {
                 Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
                 _ => Ok(()),
@@ -288,6 +452,7 @@ impl GamesFolder {
         }
         let saved = Saved {
             path: path.to_owned(),
+            added,
         };
         obelisk_core::write_atomic(&file, &serde_json::to_vec(&saved)?)
     }
@@ -308,21 +473,34 @@ impl GamesFolder {
     }
 
     /// The installation `name` of a storefront whose games go in `storefront`,
-    /// once moved into the games folder.
+    /// once moved into one of the folders that hold games, the games folder
+    /// first.
     pub(crate) fn installation(&self, storefront: &str, name: &Path) -> Option<PathBuf> {
         let name = name.file_name()?;
-        let found = self.path().join(storefront).join(name);
-        found.is_dir().then_some(found)
+        let mut locations = self.locations();
+        locations.sort_by_key(|location| *location != self.path());
+        locations
+            .into_iter()
+            .map(|location| location.join(storefront).join(name))
+            .find(|found| found.is_dir())
     }
 
     /// Removes the storefront's folder an installation left, `storefront`,
-    /// and the games folder holding it, once empty and no longer the games
-    /// folder. Only Obelisk's own folders go.
+    /// and the games folder holding it, once empty and neither the games
+    /// folder nor one the player added: Obelisk's own is made again when
+    /// needed. Only Obelisk's own folders go.
     pub(crate) fn tidy(&self, storefront: &Path) {
         let Some(games) = storefront.parent() else {
             return;
         };
-        if games == self.path() {
+        if games == self.path()
+            || self
+                .added
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|added| added == games)
+        {
             return;
         }
         if self.ours(games) && fs::remove_dir(storefront).is_ok() {

@@ -2162,3 +2162,65 @@ async fn a_move_still_waiting_goes_to_the_folder_chosen_last() {
         .join("Steam/steam-620-macos");
     eventually(|| fixture.receipt().directory == moved.to_string_lossy()).await;
 }
+
+#[tokio::test]
+async fn a_new_installation_goes_to_the_folder_the_player_picks_and_waits_only_for_its_disk() {
+    let fixture = Fixture::new(false).await;
+    let (chosen, _) = fixture.elsewhere();
+    let added = fixture.folder.add(&chosen).unwrap();
+
+    // A folder that holds no games is never used.
+    fixture.installations.install_into(
+        fixture.offer(),
+        &fixture.outside.path().canonicalize().unwrap(),
+    );
+    assert!(fixture.fake.calls().is_empty());
+
+    fixture.installations.install_into(fixture.offer(), &added);
+    idle(&fixture.installations).await;
+    let transfers = fixture.fake.with(|script| script.transfers.clone());
+    assert_eq!(transfers[0].directory, added.join("Steam"));
+
+    // The added folder's disk left: the games folder still takes games.
+    let fixture = Fixture::new(false).await;
+    let (chosen, _) = fixture.elsewhere();
+    let added = fixture.folder.add(&chosen).unwrap();
+    std::fs::remove_dir_all(&added).unwrap();
+    fixture.installations.install_into(fixture.offer(), &added);
+    assert_eq!(
+        fixture.installations.state().report,
+        Some(Report::GamesFolderUnavailable(added))
+    );
+    fixture.installations.install(fixture.offer());
+    eventually(|| fixture.fake.calls() == ["download:620"]).await;
+}
+
+#[tokio::test]
+async fn one_installation_moves_to_the_folder_the_player_picks() {
+    let fixture = Fixture::new(true).await;
+    let old = PathBuf::from(&fixture.receipt().directory);
+    let (chosen, moved) = fixture.elsewhere();
+    std::fs::write(old.join("game.bin"), b"Portal 2").unwrap();
+    let added = fixture.folder.add(&chosen).unwrap();
+
+    fixture.installations.move_into("620-macos", &added);
+    assert_eq!(fixture.moves().len(), 1);
+    fixture.installations.move_into("620-macos", &added);
+    assert!(fixture.moves().len() <= 1, "one move per installation");
+    eventually(|| fixture.receipt().directory == moved.to_string_lossy()).await;
+    eventually(|| fixture.moves().is_empty()).await;
+    assert_eq!(std::fs::read(moved.join("game.bin")).unwrap(), b"Portal 2");
+    assert!(!old.exists());
+    assert_eq!(fixture.saved(), fixture.installations.state().receipts);
+    assert_eq!(
+        fixture.folder.path(),
+        fixture.root.join("Games"),
+        "new games still go to the games folder"
+    );
+
+    // Gathering leaves an added folder's games where they are; moving it
+    // where it already is does nothing.
+    fixture.folder.gather();
+    fixture.installations.move_into("620-macos", &added);
+    assert!(fixture.moves().is_empty());
+}

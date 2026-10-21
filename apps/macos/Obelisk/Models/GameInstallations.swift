@@ -142,6 +142,11 @@ protocol InstallationsBackend<Store>: AnyObject {
     func setDiagnostic(_ running: Bool)
     /// Installs `offer`'s build, or resumes the game's interrupted Transfer.
     func install(_ offer: GameOffer)
+    /// Installs `offer`'s build in `location`, one of the folders that hold games.
+    func install(_ offer: GameOffer, into location: String)
+    /// Queues the move of `receipt`'s installation into `location`, one of
+    /// the folders that hold games.
+    func move(_ receipt: InstallationReceipt<Store.GameID>, into location: String)
     /// Verifies `receipt`'s files and repairs or updates them in place, or
     /// resumes the game's interrupted Transfer.
     func update(_ receipt: InstallationReceipt<Store.GameID>)
@@ -226,6 +231,12 @@ final class GameInstallations<Store: InstallationStorefront> {
         didSet { if updatesAutomatically != oldValue { backend?.setAutomaticUpdates(updatesAutomatically) } }
     }
     @ObservationIgnored var selection: @MainActor () -> InstallationSelection<Store>? = { nil }
+    /// Installs a game, named first, through the action it is given, in the
+    /// folder the player picks when several hold games; nil goes to the
+    /// games folder. Without it, games go to the games folder.
+    @ObservationIgnored var placement: (@MainActor (String, @escaping @MainActor (String?) -> Void) -> Void)?
+    /// The folders an installation in a directory may move to.
+    @ObservationIgnored var destinations: @MainActor (String) -> [GamesLocation] = { _ in [] }
 
     let sessions: GameSessions<Store>
     let cloud: CloudModel<Store>
@@ -499,7 +510,26 @@ final class GameInstallations<Store: InstallationStorefront> {
     /// Transfer instead, and picks every folder.
     func install(_ offer: GameOffer, of game: Store.GameID) {
         guard canInstall(game) else { return }
-        act { $0.install(offer) }
+        guard let placement else { return act { $0.install(offer) } }
+        placement(offer.title) { [weak self] location in self?.install(offer, of: game, into: location) }
+    }
+
+    /// Installs `offer` in `location`, one of the folders that hold games;
+    /// nil goes to the games folder.
+    func install(_ offer: GameOffer, of game: Store.GameID, into location: String?) {
+        guard canInstall(game) else { return }
+        if let location {
+            act { $0.install(offer, into: location) }
+        } else {
+            act { $0.install(offer) }
+        }
+    }
+
+    /// Moves an installation to `location`, another folder that holds games,
+    /// through the download queue.
+    func move(_ receipt: Receipt, into location: String) {
+        guard account != nil, canModify(receipt.gameID), receipts.contains(receipt) else { return }
+        act { $0.move(receipt, into: location) }
     }
 
     // MARK: Transfers
@@ -541,10 +571,16 @@ final class GameInstallations<Store: InstallationStorefront> {
         let game = selection.game
         let canRemove = account != nil && gate.uninstall.allows(game)
         if let receipt = receipt(for: game, preferring: selection.platform) {
+            let canModify = account != nil && canModify(game)
             return GameManagement(
-                directory: receipt.directory, offlineVolume: nil, canVerify: account != nil && canModify(game),
+                directory: receipt.directory, offlineVolume: nil, canVerify: canModify,
                 canRemove: canRemove, verify: { [weak self] in self?.verify(receipt) },
-                remove: { [weak self] in self?.uninstall(receipt) })
+                remove: { [weak self] in self?.uninstall(receipt) },
+                moves: canModify ? destinations(receipt.directory).map { location in
+                    GameMove(title: location.title, path: location.path) { [weak self] in
+                        self?.move(receipt, into: location.path)
+                    }
+                } : [])
         }
         let away = Receipt.preferred(among: offline.filter { $0.gameID == game }, platform: selection.platform)
         guard let away else { return nil }
@@ -629,6 +665,8 @@ final class NoInstallations<Store: InstallationStorefront>: InstallationsBackend
     }
     func setDiagnostic(_ running: Bool) {}
     func install(_ offer: GameOffer) {}
+    func install(_ offer: GameOffer, into location: String) {}
+    func move(_ receipt: InstallationReceipt<Store.GameID>, into location: String) {}
     func update(_ receipt: InstallationReceipt<Store.GameID>) {}
     func cancel(_ game: Store.GameID) {}
     func checkUpdates() {}
@@ -668,6 +706,10 @@ final class RustInstallations<Store: InstallationStorefront>: InstallationsBacke
     }
     func setDiagnostic(_ running: Bool) { core.setDiagnostic(running: running) }
     func install(_ offer: GameOffer) { core.install(offer: offer) }
+    func install(_ offer: GameOffer, into location: String) { core.installInto(offer: offer, location: location) }
+    func move(_ receipt: InstallationReceipt<Store.GameID>, into location: String) {
+        core.moveInto(installation: receipt.id, location: location)
+    }
     func update(_ receipt: InstallationReceipt<Store.GameID>) { core.update(installation: receipt.id) }
     func cancel(_ game: Store.GameID) { core.cancel(game: Store.name(game)) }
     func checkUpdates() { core.checkUpdates() }
@@ -734,6 +776,25 @@ final class RustInstallations<Store: InstallationStorefront>: InstallationsBacke
     }
 }
 
+/// A folder that holds games an installation may move to.
+struct GameMove: Identifiable {
+    let title: String
+    let path: String
+    let move: () -> Void
+
+    var id: String { path }
+}
+
+extension GameOffer {
+    /// The game's name, as its storefront gives it.
+    var title: String {
+        switch self {
+        case let .steam(_, name, _): name
+        case let .epic(_, _, _, title), let .gog(_, title): title
+        }
+    }
+}
+
 /// What a game's menus offer, on its page and on its cover: its
 /// installation's folder, verification and uninstall, or forgetting an
 /// installation whose disk is not connected.
@@ -750,6 +811,8 @@ struct GameManagement {
     let verify: () -> Void
     /// Uninstalls the installation, or forgets it.
     let remove: () -> Void
+    /// The other folders that hold games it may move to.
+    var moves: [GameMove] = []
 
     var isOffline: Bool { offlineVolume != nil }
 

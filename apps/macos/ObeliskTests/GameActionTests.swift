@@ -190,6 +190,45 @@ final class GameActionTests: XCTestCase {
         XCTAssertEqual(fixture.backend.actions, [.uninstall(fixture.receipt)])
     }
 
+    func testADownloadGoesToTheFolderThePlayerPicks() async throws {
+        let fixture = InstallationsFixture(installed: false)
+        let installations = fixture.connect()
+        var asked: [String] = []
+        installations.placement = { name, install in
+            asked.append(name)
+            install("/Volumes/SSD/Obelisk Games")
+        }
+        installations.selectedAction?.perform()
+        XCTAssertEqual(asked, ["Portal 2"])
+        XCTAssertEqual(fixture.backend.actions, [.installInto(fixture.offer(), "/Volumes/SSD/Obelisk Games")])
+
+        // Picking nothing installs nothing; picking the games folder installs there.
+        installations.placement = { _, install in install(nil) }
+        installations.selectedAction?.perform()
+        XCTAssertEqual(fixture.backend.actions.last, .install(fixture.offer()))
+    }
+
+    func testAnInstalledGameMovesToAnotherFolderThatHoldsGames() async throws {
+        let fixture = InstallationsFixture()
+        let installations = fixture.connect()
+        let disk = GamesLocation(path: "/Volumes/SSD/Obelisk Games", isDefault: false, isTarget: false,
+                                 isConnected: true)
+        var asked: [String] = []
+        installations.destinations = { directory in
+            asked.append(directory)
+            return [disk]
+        }
+        let management = try XCTUnwrap(installations.selectedManagement)
+        XCTAssertEqual(asked, [fixture.receipt.directory])
+        XCTAssertEqual(management.moves.map(\.path), [disk.path])
+        management.moves[0].move()
+        XCTAssertEqual(fixture.backend.actions, [.move(fixture.receipt, disk.path)])
+
+        // The game runs: it stays where it is.
+        fixture.backend.publish { $0.gate = .session(620) }
+        try await eventually { installations.selectedManagement?.moves.isEmpty == true }
+    }
+
     func testAnInstallationOnADisconnectedDiskCanOnlyBeForgotten() async throws {
         let fixture = InstallationsFixture(installed: false)
         let installations = fixture.connect()

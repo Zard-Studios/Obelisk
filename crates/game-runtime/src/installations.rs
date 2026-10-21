@@ -312,9 +312,16 @@ enum Job {
     Transfer { automatic: Option<String> },
     /// A launch's own Transfer, which the launch runs itself.
     Launch,
-    /// It moves the installation `transfer` lands on into the games folder,
-    /// rather than transferring files.
-    Move,
+    /// It moves the installation `transfer` lands on into the folder `to`
+    /// holds games in, else into the games folder of its turn, rather than
+    /// transferring files.
+    Move { to: Option<PathBuf> },
+}
+
+impl Job {
+    fn moves(&self) -> bool {
+        matches!(self, Self::Move { .. })
+    }
 }
 
 /// Where an account's Transfers queue, and how the queue names them.
@@ -399,18 +406,22 @@ impl<S: Storefront> Owner for Shared<S> {
             && inner.state.maintenance.is_none()
             && !sessions.recovering
             && !sessions.active.iter().any(|active| active.game == game)
-            && !(queued.job == Job::Move && launching)
+            && !(queued.job.moves() && launching)
     }
 
     /// Starts the queued Transfer `id`, whose turn came.
     fn start(self: Arc<Self>, id: u64) {
         let moving = self.update(|inner| {
             let queued = inner.queued.iter().find(|queued| queued.id == id)?;
-            (queued.job == Job::Move).then(|| queued.transfer.clone())
+            match &queued.job {
+                Job::Move { to } => Some((queued.transfer.clone(), to.clone())),
+                _ => None,
+            }
         });
-        if let Some(transfer) = moving {
-            // A move goes to the games folder as its turn comes.
-            let folder = self.folder.path();
+        if let Some((transfer, to)) = moving {
+            // A move goes to its folder, else to the games folder as its
+            // turn comes.
+            let folder = to.unwrap_or_else(|| self.folder.path());
             runtime().spawn(async move { self.relocate(id, &transfer, &folder).await });
             return;
         }
@@ -457,7 +468,7 @@ impl<S: Storefront> Owner for Shared<S> {
                 && inner
                     .queued
                     .iter()
-                    .any(|queued| queued.id == id && queued.job != Job::Move)
+                    .any(|queued| queued.id == id && !queued.job.moves())
         });
         if stopping {
             self.content.cancel();
@@ -605,9 +616,12 @@ impl<S: Storefront> Shared<S> {
             if !self.gate(inner).modify.allows(&game) {
                 return false;
             }
-            if !transfer.directory.is_dir() && !self.folder.connected() {
+            // Only the folder it goes to must be there: another's disk may
+            // have left.
+            let location = transfer.directory.parent().unwrap_or(&transfer.directory);
+            if !transfer.directory.is_dir() && !self.folder.connected_at(location) {
                 if automatic.is_none() {
-                    inner.state.report = Some(Report::GamesFolderUnavailable(self.folder.path()));
+                    inner.state.report = Some(Report::GamesFolderUnavailable(location.to_owned()));
                 }
                 return false;
             }
@@ -663,7 +677,7 @@ impl<S: Storefront> Shared<S> {
             inner
                 .queued
                 .iter()
-                .filter(|queued| queued.transfer.game() == game && queued.job != Job::Move)
+                .filter(|queued| queued.transfer.game() == game && !queued.job.moves())
                 .map(|queued| queued.id)
                 .collect()
         });
@@ -1352,11 +1366,29 @@ impl<S: Storefront> Installations<S> {
         self.shared.update(|inner| inner.diagnostic = running);
     }
 
-    /// Installs what `offer` names under Obelisk's library, or updates the
+    /// Installs what `offer` names in the games folder, or updates the
     /// game's installation in place. A Transfer of the game that stopped
     /// before its receipt resumes instead.
     pub fn install(&self, offer: Offer<S>) {
-        let fresh = offer.transfer(self.shared.folder.path().join(S::GAMES_DIRECTORY));
+        self.install_from(offer, self.shared.folder.path());
+    }
+
+    /// Installs what `offer` names in `location`, one of the folders that
+    /// hold games, as `install` does in the games folder.
+    pub fn install_into(&self, offer: Offer<S>, location: &Path) {
+        if self
+            .shared
+            .folder
+            .locations()
+            .iter()
+            .any(|listed| listed == location)
+        {
+            self.install_from(offer, location.to_owned());
+        }
+    }
+
+    fn install_from(&self, offer: Offer<S>, location: PathBuf) {
+        let fresh = offer.transfer(location.join(S::GAMES_DIRECTORY));
         let transfer = {
             let inner = self.shared.inner.lock().unwrap();
             let installed = inner
@@ -1391,6 +1423,51 @@ impl<S: Storefront> Installations<S> {
 
     fn download(&self, transfer: Transfer<S>) {
         self.shared.download(transfer, None);
+    }
+
+    /// Queues the move of the installation `receipt` names into `location`,
+    /// one of the folders that hold games whose disk is there.
+    pub fn move_into(&self, receipt: &str, location: &Path) {
+        let shared = &self.shared;
+        let listed = shared
+            .folder
+            .locations()
+            .iter()
+            .any(|listed| listed == location);
+        if !listed || !shared.folder.connected_at(location) {
+            return;
+        }
+        let queued = shared.update(|inner| {
+            let receipt = inner.receipt(receipt)?;
+            let already = inner
+                .queued
+                .iter()
+                .any(|waiting| waiting.job.moves() && waiting.transfer.lands_on(&receipt));
+            if Path::new(&receipt.directory).starts_with(location)
+                || already
+                || !shared.gate(inner).modify.allows(&receipt.game())
+            {
+                return None;
+            }
+            let transfer = receipt.transfer();
+            // The queue calls no owner while it adds.
+            let id = shared.queueing.queue.push(
+                &shared.owner(),
+                shared.queue_request(&transfer, queue::Kind::Move, false),
+            );
+            inner.queued.push(Queued {
+                id,
+                transfer,
+                job: Job::Move {
+                    to: Some(location.to_owned()),
+                },
+            });
+            inner.state.report = None;
+            Some(())
+        });
+        if queued.is_some() {
+            shared.queueing.queue.advance();
+        }
     }
 
     /// Whether Obelisk queues each newer build as soon as it is known,
@@ -1908,11 +1985,12 @@ impl<S: Storefront> Resident for Shared<S> {
             .collect()
     }
 
-    /// Queues one move per installation outside `folder`, behind the
-    /// Transfers waiting: a Transfer of its game queued first runs where the
-    /// game is. The new installations still waiting go there instead, as do
-    /// the moves, which go to the games folder of their turn.
-    fn gather(self: Arc<Self>, folder: &Path) {
+    /// Queues one move per installation outside `folder` and every folder
+    /// `kept`, behind the Transfers waiting: a Transfer of its game queued
+    /// first runs where the game is. The new installations still waiting go
+    /// there instead, as do the moves, which go to the games folder of their
+    /// turn.
+    fn gather(self: Arc<Self>, folder: &Path, kept: &[PathBuf]) {
         let destination = folder.join(S::GAMES_DIRECTORY);
         let queued = self.update(|inner| {
             if inner.signed_out || inner.diagnostic {
@@ -1944,10 +2022,12 @@ impl<S: Storefront> Resident for Shared<S> {
                 .iter()
                 .filter(|receipt| {
                     let game = receipt.game();
-                    !Path::new(&receipt.directory).starts_with(folder)
+                    let directory = Path::new(&receipt.directory);
+                    !directory.starts_with(folder)
+                        && !kept.iter().any(|kept| directory.starts_with(kept))
                         && inner.state.uninstall_game.as_ref() != Some(&game)
                         && !inner.queued.iter().any(|waiting| {
-                            waiting.job == Job::Move && waiting.transfer.lands_on(receipt)
+                            waiting.job.moves() && waiting.transfer.lands_on(receipt)
                         })
                 })
                 .cloned()
@@ -1962,7 +2042,7 @@ impl<S: Storefront> Resident for Shared<S> {
                 inner.queued.push(Queued {
                     id,
                     transfer,
-                    job: Job::Move,
+                    job: Job::Move { to: None },
                 });
             }
             !outside.is_empty()

@@ -9,6 +9,8 @@ final class FakeInstallations<Store: InstallationStorefront>: InstallationsBacke
     enum Call: Equatable {
         case diagnostic(Bool)
         case install(GameOffer)
+        case installInto(GameOffer, String)
+        case move(InstallationReceipt<Store.GameID>, String)
         case update(InstallationReceipt<Store.GameID>)
         case cancel(Store.GameID)
         case checkUpdates
@@ -67,6 +69,10 @@ final class FakeInstallations<Store: InstallationStorefront>: InstallationsBacke
 
     func setDiagnostic(_ running: Bool) { record(.diagnostic(running)) }
     func install(_ offer: GameOffer) { record(.install(offer)) }
+    func install(_ offer: GameOffer, into location: String) { record(.installInto(offer, location)) }
+    func move(_ receipt: InstallationReceipt<Store.GameID>, into location: String) {
+        record(.move(receipt, location))
+    }
     func update(_ receipt: InstallationReceipt<Store.GameID>) { record(.update(receipt)) }
     func cancel(_ game: Store.GameID) { record(.cancel(game)) }
     func checkUpdates() { record(.checkUpdates) }

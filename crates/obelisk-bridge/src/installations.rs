@@ -18,7 +18,7 @@ use game_runtime::{
     steam,
 };
 use obelisk_core::Platform;
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 
 /// One installation of the account, as its receipt records it.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -387,6 +387,12 @@ fn install<S: Named>(installations: &Installations<S>, offer: GameOffer) {
     }
 }
 
+fn install_into<S: Named>(installations: &Installations<S>, offer: GameOffer, location: &Path) {
+    if let Some(offer) = S::offer(offer) {
+        installations.install_into(offer, location);
+    }
+}
+
 fn cancel<S: Named>(installations: &Installations<S>, game: &str) {
     if let Some(game) = S::named(game) {
         installations.cancel(&game);
@@ -668,6 +674,19 @@ impl AccountInstallations {
         if join.valid() {
             installations.join(&installation, join);
         }
+    }
+
+    /// Installs `offer` in `location`, one of the folders that hold games.
+    pub fn install_into(&self, offer: GameOffer, location: String) {
+        let location = std::path::PathBuf::from(location);
+        each!(self, installations => install_into(installations, offer, &location))
+    }
+
+    /// Queues the move of `installation` into `location`, one of the folders
+    /// that hold games.
+    pub fn move_into(&self, installation: String, location: String) {
+        let location = std::path::PathBuf::from(location);
+        each!(self, installations => installations.move_into(&installation, &location))
     }
 
     pub fn uninstall(&self, installation: String) {
