@@ -26,6 +26,7 @@ struct Account {
     installations: Vec<(PathBuf, u64)>,
     gathered: Mutex<Vec<PathBuf>>,
     refreshed: Mutex<u32>,
+    left: Mutex<Vec<PathBuf>>,
 }
 
 impl Resident for Account {
@@ -37,6 +38,14 @@ impl Resident for Account {
     }
     fn refresh(&self) {
         *self.refreshed.lock().unwrap() += 1;
+    }
+    fn busy_on(&self, volume: &Path) -> bool {
+        self.installations
+            .iter()
+            .any(|(installation, _)| installation.starts_with(volume))
+    }
+    fn leaving(&self, volume: &Path) {
+        self.left.lock().unwrap().push(volume.to_owned());
     }
 }
 
@@ -363,4 +372,27 @@ fn a_move_finds_its_installation_in_an_added_folder() {
     // Its own folder stays as it empties.
     folder.tidy(&added.join("Steam"));
     assert!(added.is_dir());
+}
+
+#[test]
+fn a_disk_is_busy_while_an_account_works_there_and_each_hears_it_leave() {
+    let places = places();
+    let folder = GamesFolder::new(&places.library);
+    let account = registered(
+        &folder,
+        Account {
+            installations: vec![(
+                places.elsewhere.join("Obelisk Games/Steam/steam-620-macos"),
+                1,
+            )],
+            ..Account::default()
+        },
+    );
+    assert!(folder.busy_on(&places.elsewhere));
+    assert!(!folder.busy_on(&places.library));
+    folder.leaving(&places.elsewhere);
+    assert_eq!(
+        *account.left.lock().unwrap(),
+        std::slice::from_ref(&places.elsewhere)
+    );
 }

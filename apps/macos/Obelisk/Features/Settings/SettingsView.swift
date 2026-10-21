@@ -113,6 +113,13 @@ struct SettingsView: View {
                              confirm: model.gamesFolder.confirm)
         }
         .errorAlert(L10n.string("ui.settings.games_folder_failed"), message: Bindable(model.gamesFolder).failure)
+        .alert(L10n.string("ui.games_folder.added"),
+               isPresented: Binding(get: { model.gamesFolder.notice != nil },
+                                    set: { if !$0 { model.gamesFolder.notice = nil } })) {
+            Button(L10n.string("ui.common.ok")) {}
+        } message: {
+            Text(model.gamesFolder.notice ?? "")
+        }
     }
 
     /// Asks for the restart a newly chosen language waits for.
@@ -274,6 +281,11 @@ struct SettingsView: View {
             }
         } accessory: {
             HStack(spacing: 8) {
+                if folder.ejectableVolume(of: location) != nil {
+                    StorefrontGlassButton(systemName: "eject", size: 13, label: L10n.string("ui.games_folder.eject"),
+                                          identifier: "settings-eject-games-folder") { folder.eject(location) }
+                        .help(L10n.string("ui.games_folder.eject"))
+                }
                 StorefrontGlassButton(systemName: "folder", size: 13, label: L10n.string("ui.settings.show_in_finder"),
                                       identifier: "settings-show-games-folder") {
                     NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: location.path)

@@ -7,6 +7,7 @@ import XCTest
 final class FakeGamesFolder: GamesFolderBackend {
     enum Call: Equatable {
         case choose(String), chooseDefault, add(String), prefer(String), remove(String), gather, volumesChanged
+        case leaving(String)
     }
 
     private(set) var calls: [Call] = []
@@ -59,6 +60,9 @@ final class FakeGamesFolder: GamesFolderBackend {
     }
     func gather() { calls.append(.gather) }
     func volumesChanged() { calls.append(.volumesChanged) }
+    var busy: Set<String> = []
+    func isBusy(on volume: String) -> Bool { busy.contains(volume) }
+    func volumeLeaving(_ volume: String) { calls.append(.leaving(volume)) }
 }
 
 @MainActor
@@ -193,6 +197,33 @@ final class GamesFolderModelTests: XCTestCase {
         model.remove(added)
         XCTAssertEqual(backend.calls, [.add(picked.path), .prefer(added.path), .remove(added.path)])
         XCTAssertNotNil(model.failure)
+    }
+
+
+    func testADiskAboutToLeaveLetsGoOfWhatObeliskWritesThere() async throws {
+        let backend = FakeGamesFolder()
+        let center = NotificationCenter()
+        let model = model(backend, center: center)
+        let volume = URL(filePath: "/Volumes/SSD", directoryHint: .isDirectory)
+        center.post(name: NSWorkspace.willUnmountNotification, object: nil,
+                    userInfo: [NSWorkspace.volumeURLUserInfoKey: volume])
+        try await eventually { backend.calls.contains(.leaving(volume.path)) }
+        withExtendedLifetime(model) {}
+    }
+
+    func testOnlyAConnectedExternalDiskIsEjectable() {
+        let model = model(FakeGamesFolder())
+        let own = GamesLocation(path: FileManager.default.temporaryDirectory.path, isDefault: true, isTarget: true,
+                                isConnected: true)
+        let gone = GamesLocation(path: "/Volumes/Gone/Obelisk Games", isDefault: false, isTarget: false,
+                                 isConnected: false)
+        let onTheMac = GamesLocation(path: FileManager.default.temporaryDirectory.path, isDefault: false,
+                                     isTarget: false, isConnected: true)
+        XCTAssertNil(model.ejectableVolume(of: own))
+        XCTAssertNil(model.ejectableVolume(of: gone))
+        XCTAssertNil(model.ejectableVolume(of: onTheMac), "the Mac's own disk stays")
+        model.eject(onTheMac)
+        XCTAssertNil(model.failure)
     }
 
 }

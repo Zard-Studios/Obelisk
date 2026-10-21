@@ -16,6 +16,7 @@ pub mod platform;
 pub mod storefront;
 pub mod transfer;
 pub mod verification;
+pub mod volume;
 pub mod watch;
 
 pub use atomic_file::{write_atomic, write_atomic_with};

@@ -2224,3 +2224,39 @@ async fn one_installation_moves_to_the_folder_the_player_picks() {
     fixture.installations.move_into("620-macos", &added);
     assert!(fixture.moves().is_empty());
 }
+
+#[tokio::test]
+async fn a_disk_about_to_leave_stops_the_transfers_writing_there() {
+    let fixture = Fixture::new(true).await;
+    let (chosen, _) = fixture.elsewhere();
+    let added = fixture.folder.add(&chosen).unwrap();
+    assert!(!fixture.folder.busy_on(&chosen));
+    fixture.fake.hold();
+    fixture.installations.install_into(
+        Offer {
+            product: Product {
+                app_id: 730,
+                ..portal()
+            },
+            ..fixture.offer()
+        },
+        &added,
+    );
+    eventually(|| fixture.installations.state().downloading).await;
+    assert!(fixture.folder.busy_on(&chosen));
+    assert!(
+        !fixture.folder.busy_on(&fixture.root.join("Games")),
+        "Portal 2 on this Mac rests"
+    );
+
+    fixture.folder.leaving(&fixture.root.join("Games"));
+    assert!(
+        fixture.installations.state().downloading,
+        "another disk's left"
+    );
+    fixture.folder.leaving(&chosen);
+    fixture.fake.release();
+    idle(&fixture.installations).await;
+    assert!(!fixture.folder.busy_on(&chosen));
+    assert_eq!(fixture.installations.state().receipts.len(), 1);
+}

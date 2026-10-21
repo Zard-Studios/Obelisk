@@ -363,6 +363,7 @@ final class GameInstallations<Store: InstallationStorefront> {
         case let .uninstall(reason): GameInstallationFailure.uninstall(reason)
         case let .move(reason): GameInstallationFailure.move(reason)
         case let .gamesFolderUnavailable(path): GameInstallationFailure.gamesFolderUnavailable(path)
+        case let .diskFormat(path, format): GameInstallationFailure.diskFormat(path, format)
         }
     }
 

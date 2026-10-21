@@ -88,6 +88,9 @@ pub enum InstallationReport {
     Move { reason: String },
     /// The games folder's disk is not connected: this folder.
     GamesFolderUnavailable { path: String },
+    /// A disk's format could not hold the game's files: the folder that holds
+    /// games there, and the format's name.
+    DiskFormat { path: String, format: String },
 }
 
 /// What may start now, of one kind of action.
@@ -305,6 +308,10 @@ impl From<Report> for InstallationReport {
             Report::Move(reason) => Self::Move { reason },
             Report::GamesFolderUnavailable(path) => Self::GamesFolderUnavailable {
                 path: path.to_string_lossy().into_owned(),
+            },
+            Report::DiskFormat(path, format) => Self::DiskFormat {
+                path: path.to_string_lossy().into_owned(),
+                format,
             },
         }
     }

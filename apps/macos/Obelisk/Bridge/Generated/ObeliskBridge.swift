@@ -2113,6 +2113,12 @@ public protocol GamesFolderProtocol: AnyObject, Sendable {
     func add(chosen: String) throws  -> String
     
     /**
+     * Whether a game of the disk mounted at `volume` runs, or a Transfer,
+     * move or uninstall works there: ejecting it waits.
+     */
+    func busyOn(volume: String)  -> Bool
+    
+    /**
      * Waits for a revision newer than `after`.
      */
     func changed(after: UInt64) async  -> GamesFolderState
@@ -2159,6 +2165,12 @@ public protocol GamesFolderProtocol: AnyObject, Sendable {
     func remove(location: String) throws 
     
     func state()  -> GamesFolderState
+    
+    /**
+     * The disk mounted at `volume` is about to leave: the Transfers and
+     * moves on it stop.
+     */
+    func volumeLeaving(volume: String) 
     
     /**
      * A disk came or left.
@@ -2244,6 +2256,20 @@ open func add(chosen: String)throws  -> String  {
     uniffi_obelisk_bridge_fn_method_gamesfolder_add(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(chosen),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Whether a game of the disk mounted at `volume` runs, or a Transfer,
+     * move or uninstall works there: ejecting it waits.
+     */
+open func busyOn(volume: String) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_method_gamesfolder_busy_on(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(volume),uniffiCallStatus
     )
 })
 }
@@ -2364,6 +2390,19 @@ open func state() -> GamesFolderState  {
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
+}
+    
+    /**
+     * The disk mounted at `volume` is about to leave: the Transfers and
+     * moves on it stop.
+     */
+open func volumeLeaving(volume: String)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_method_gamesfolder_volume_leaving(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(volume),uniffiCallStatus
+    )
+}
 }
     
     /**
@@ -12539,6 +12578,12 @@ public enum InstallationReport: Equatable, Hashable {
      */
     case gamesFolderUnavailable(path: String
     )
+    /**
+     * A disk's format could not hold the game's files: the folder that holds
+     * games there, and the format's name.
+     */
+    case diskFormat(path: String, format: String
+    )
 
 
 
@@ -12575,6 +12620,9 @@ public struct FfiConverterTypeInstallationReport: FfiConverterRustBuffer {
         case 5: return .gamesFolderUnavailable(path: try FfiConverterString.read(from: &buf)
         )
         
+        case 6: return .diskFormat(path: try FfiConverterString.read(from: &buf), format: try FfiConverterString.read(from: &buf)
+        )
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -12606,6 +12654,12 @@ public struct FfiConverterTypeInstallationReport: FfiConverterRustBuffer {
         case let .gamesFolderUnavailable(path):
             writeInt(&buf, Int32(5))
             FfiConverterString.write(path, into: &buf)
+            
+        
+        case let .diskFormat(path,format):
+            writeInt(&buf, Int32(6))
+            FfiConverterString.write(path, into: &buf)
+            FfiConverterString.write(format, into: &buf)
             
         }
     }
@@ -16166,6 +16220,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_method_gamesfolder_add() != 37322) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_obelisk_bridge_checksum_method_gamesfolder_busy_on() != 41410) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_obelisk_bridge_checksum_method_gamesfolder_changed() != 29481) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -16191,6 +16248,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_gamesfolder_state() != 20183) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_gamesfolder_volume_leaving() != 60981) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_gamesfolder_volumes_changed() != 47232) {

@@ -183,6 +183,18 @@ impl GamesFolder {
         self.folder.gather()
     }
 
+    /// Whether a game of the disk mounted at `volume` runs, or a Transfer,
+    /// move or uninstall works there: ejecting it waits.
+    pub fn busy_on(&self, volume: String) -> bool {
+        self.folder.busy_on(Path::new(&volume))
+    }
+
+    /// The disk mounted at `volume` is about to leave: the Transfers and
+    /// moves on it stop.
+    pub fn volume_leaving(&self, volume: String) {
+        self.folder.leaving(Path::new(&volume))
+    }
+
     /// A disk came or left.
     pub fn volumes_changed(&self) {
         self.folder.volumes_changed()

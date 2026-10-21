@@ -28,6 +28,12 @@ protocol GamesFolderBackend: AnyObject {
     func gather()
     /// A disk came or left.
     func volumesChanged()
+    /// Whether a game of the disk mounted at `volume` runs, or a Transfer,
+    /// move or uninstall works there.
+    func isBusy(on volume: String) -> Bool
+    /// The disk mounted at `volume` is about to leave: the Transfers and
+    /// moves on it stop.
+    func volumeLeaving(_ volume: String)
 }
 
 /// The games folder every account's installations of the library share in Rust.
@@ -49,6 +55,8 @@ final class RustGamesFolder: GamesFolderBackend {
     func remove(_ location: String) throws { try core.remove(location: location) }
     func gather() { core.gather() }
     func volumesChanged() { core.volumesChanged() }
+    func isBusy(on volume: String) -> Bool { core.busyOn(volume: volume) }
+    func volumeLeaving(_ volume: String) { core.volumeLeaving(volume: volume) }
 }
 
 /// A folder the player picked for the games, and what choosing it does,
@@ -142,6 +150,9 @@ final class GamesFolderModel {
     var proposal: GamesFolderProposal?
     /// Why the last folder the player picked was not taken.
     var failure: String?
+    /// What the player should know of a folder just added, such as its
+    /// disk's format.
+    var notice: String?
 
     @ObservationIgnored private let backend: any GamesFolderBackend
     @ObservationIgnored private var revision: UInt64 = 0
@@ -176,6 +187,12 @@ final class GamesFolderModel {
                 MainActor.assumeIsolated { self?.volumesChanged() }
             }
         }
+        // A disk about to leave lets go of the files Obelisk writes there.
+        volumes.append(center.addObserver(forName: NSWorkspace.willUnmountNotification, object: nil,
+                                          queue: .main) { [weak self] notification in
+            let volume = notification.userInfo?[NSWorkspace.volumeURLUserInfoKey] as? URL
+            MainActor.assumeIsolated { if let volume { self?.backend.volumeLeaving(volume.path) } }
+        })
     }
 
     isolated deinit {
@@ -219,14 +236,56 @@ final class GamesFolderModel {
         placement = InstallPlacement(gameName: gameName, locations: connected, install: { install($0) })
     }
 
-    /// Adds the folder the player picked to those that hold games: no game moves.
+    /// Adds the folder the player picked to those that hold games: no game
+    /// moves. A disk macOS only reads is refused, and one whose format
+    /// limits what it holds is told.
     func add(_ folder: URL) {
         failure = nil
+        notice = nil
+        let volume = GamesFolderProposal.volume(of: folder)
+        if volume.readOnly {
+            failure = L10n.string("ui.games_folder.read_only", volume.name)
+            return
+        }
         do {
             _ = try backend.add(folder.path)
             apply(backend.state())
+            notice = volume.format.map { L10n.string("ui.games_folder.format", volume.name, $0) }
         } catch {
             failure = L10n.string("model.gamesFolder.failed", L10n.message(Self.reason(error)))
+        }
+    }
+
+    /// The disk `location` lies on, when the player may eject it: an
+    /// external or removable one, connected.
+    func ejectableVolume(of location: GamesLocation) -> URL? {
+        guard !location.isDefault, location.isConnected else { return nil }
+        let keys: Set<URLResourceKey> = [.volumeURLKey, .volumeIsEjectableKey, .volumeIsRemovableKey,
+                                         .volumeIsInternalKey]
+        guard let values = try? URL(filePath: location.path, directoryHint: .isDirectory).resourceValues(forKeys: keys),
+              let volume = values.volume,
+              values.volumeIsEjectable == true || values.volumeIsRemovable == true || values.volumeIsInternal == false
+        else { return nil }
+        return volume
+    }
+
+    /// Ejects the disk `location` lies on, once no game runs from it and
+    /// nothing Obelisk does writes there.
+    func eject(_ location: GamesLocation) {
+        failure = nil
+        guard let volume = ejectableVolume(of: location) else { return }
+        if backend.isBusy(on: volume.path) {
+            failure = L10n.string("model.gamesFolder.ejectBusy", location.title)
+            return
+        }
+        Task.detached {
+            do {
+                try NSWorkspace.shared.unmountAndEjectDevice(at: volume)
+            } catch {
+                await MainActor.run { [weak self] in
+                    self?.failure = L10n.string("model.gamesFolder.ejectFailed", location.title)
+                }
+            }
         }
     }
 

@@ -7247,6 +7247,91 @@
         }
       }
     },
+    "model.game.diskFormat": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%1$@” is formatted as %2$@, which can’t hold this game’s files. Install it on This Mac, or on a disk formatted as APFS."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "« %1$@ » est formaté en %2$@, qui ne peut pas contenir les fichiers de ce jeu. Installez-le sur ce Mac, ou sur un disque formaté en APFS."
+          }
+        }
+      }
+    },
+    "model.gamesFolder.ejectBusy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@” can’t be ejected yet: a game runs from it, or a game is downloading, moving or being uninstalled there. Wait for it to end, or stop it in Downloads."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "« %@ » ne peut pas encore être éjecté : un jeu s’exécute depuis ce disque, ou un jeu y est téléchargé, déplacé ou désinstallé. Attendez la fin, ou arrêtez-le dans les Téléchargements."
+          }
+        }
+      }
+    },
+    "model.gamesFolder.ejectFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@” could not be ejected. Quit the apps that use it, then try again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "« %@ » n’a pas pu être éjecté. Quittez les apps qui l’utilisent, puis réessayez."
+          }
+        }
+      }
+    },
+    "ui.games_folder.eject": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eject"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Éjecter"
+          }
+        }
+      }
+    },
+    "ui.games_folder.added": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folder Added"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dossier ajouté"
+          }
+        }
+      }
+    },
     "ui.library.account_game_count": {
       "extractionState": "manual",
       "localizations": {
@@ -15338,13 +15423,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "“%1$@” is formatted as %2$@. Games can be installed there, but it is slower with some of them and can be damaged if it is unplugged without being ejected. APFS suits a disk used only with Macs best."
+            "value": "“%1$@” is formatted as %2$@. Windows games install there, but some Mac games may not: ExFAT and FAT hold no links, which Mac games use, and FAT holds no file of 4 GB or more. It can also be damaged if it is unplugged without being ejected. APFS suits a disk used only with Macs best."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "« %1$@ » est formaté en %2$@. Les jeux peuvent s’y installer, mais il est plus lent avec certains et peut s’abîmer s’il est débranché sans être éjecté. APFS convient mieux à un disque utilisé seulement avec des Mac."
+            "value": "« %1$@ » est formaté en %2$@. Les jeux Windows s’y installent, mais certains jeux Mac peut-être pas : ExFAT et FAT ne contiennent pas de liens, qu’utilisent les jeux Mac, et FAT aucun fichier de 4 Go ou plus. Il peut aussi s’abîmer s’il est débranché sans être éjecté. APFS convient mieux à un disque utilisé seulement avec des Mac."
           }
         }
       }

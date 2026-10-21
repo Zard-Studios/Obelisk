@@ -545,6 +545,11 @@ uint64_t uniffi_obelisk_bridge_fn_constructor_gamesfolder_new(RustBuffer library
 RustBuffer uniffi_obelisk_bridge_fn_method_gamesfolder_add(uint64_t ptr, RustBuffer chosen, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_GAMESFOLDER_BUSY_ON
+#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_GAMESFOLDER_BUSY_ON
+int8_t uniffi_obelisk_bridge_fn_method_gamesfolder_busy_on(uint64_t ptr, RustBuffer volume, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_GAMESFOLDER_CHANGED
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_GAMESFOLDER_CHANGED
 uint64_t uniffi_obelisk_bridge_fn_method_gamesfolder_changed(uint64_t ptr, uint64_t after
@@ -588,6 +593,11 @@ void uniffi_obelisk_bridge_fn_method_gamesfolder_remove(uint64_t ptr, RustBuffer
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_GAMESFOLDER_STATE
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_GAMESFOLDER_STATE
 RustBuffer uniffi_obelisk_bridge_fn_method_gamesfolder_state(uint64_t ptr, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_GAMESFOLDER_VOLUME_LEAVING
+#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_GAMESFOLDER_VOLUME_LEAVING
+void uniffi_obelisk_bridge_fn_method_gamesfolder_volume_leaving(uint64_t ptr, RustBuffer volume, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_FN_METHOD_GAMESFOLDER_VOLUMES_CHANGED
@@ -1832,6 +1842,12 @@ uint16_t uniffi_obelisk_bridge_checksum_method_gamesfolder_add(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_METHOD_GAMESFOLDER_BUSY_ON
+#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_METHOD_GAMESFOLDER_BUSY_ON
+uint16_t uniffi_obelisk_bridge_checksum_method_gamesfolder_busy_on(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_METHOD_GAMESFOLDER_CHANGED
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_METHOD_GAMESFOLDER_CHANGED
 uint16_t uniffi_obelisk_bridge_checksum_method_gamesfolder_changed(void
@@ -1883,6 +1899,12 @@ uint16_t uniffi_obelisk_bridge_checksum_method_gamesfolder_remove(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_METHOD_GAMESFOLDER_STATE
 #define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_METHOD_GAMESFOLDER_STATE
 uint16_t uniffi_obelisk_bridge_checksum_method_gamesfolder_state(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_METHOD_GAMESFOLDER_VOLUME_LEAVING
+#define UNIFFI_FFIDEF_UNIFFI_OBELISK_BRIDGE_CHECKSUM_METHOD_GAMESFOLDER_VOLUME_LEAVING
+uint16_t uniffi_obelisk_bridge_checksum_method_gamesfolder_volume_leaving(void
     
 );
 #endif

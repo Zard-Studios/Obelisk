@@ -127,6 +127,12 @@ pub(crate) trait Resident: Send + Sync {
     /// Hides the installations whose disk left, and shows those whose disk
     /// came back.
     fn refresh(&self);
+    /// Whether a game of `volume` runs, or a Transfer, move or uninstall
+    /// works there.
+    fn busy_on(&self, volume: &Path) -> bool;
+    /// `volume` is about to leave: its Transfers and moves stop, keeping
+    /// what they verified.
+    fn leaving(&self, volume: &Path);
 }
 
 /// Obelisk's games folder, which every account's installations share.
@@ -438,6 +444,22 @@ impl GamesFolder {
         self.publish(self.path());
         for resident in self.residents() {
             resident.refresh();
+        }
+    }
+
+    /// Whether a game of the disk mounted at `volume` runs, or a Transfer,
+    /// move or uninstall works there: ejecting it waits.
+    pub fn busy_on(&self, volume: &Path) -> bool {
+        self.residents()
+            .iter()
+            .any(|resident| resident.busy_on(volume))
+    }
+
+    /// The disk mounted at `volume` is about to leave: the Transfers and
+    /// moves on it stop, keeping what they verified.
+    pub fn leaving(&self, volume: &Path) {
+        for resident in self.residents() {
+            resident.leaving(volume);
         }
     }
 

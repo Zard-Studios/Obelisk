@@ -257,6 +257,9 @@ pub enum Report {
     /// A move into the games folder failed for this reason, a localization
     /// key or the system's message.
     Move(String),
+    /// A disk's format could not hold the game's files: the folder that holds
+    /// games there, and the format's name.
+    DiskFormat(PathBuf, String),
     /// The games folder's disk is not connected: this folder.
     GamesFolderUnavailable(PathBuf),
 }
@@ -450,7 +453,9 @@ impl<S: Storefront> Owner for Shared<S> {
                     && !inner.transfer_cancel.is_cancelled()
                     && !inner.signed_out
                 {
-                    inner.state.report = Some(Report::Storefront(key));
+                    let location = transfer.directory.parent().unwrap_or(&transfer.directory);
+                    inner.state.report =
+                        Some(disk_format(location, &key).unwrap_or(Report::Storefront(key)));
                 }
             });
         });
@@ -2052,6 +2057,42 @@ impl<S: Storefront> Resident for Shared<S> {
         }
     }
 
+    /// Whether a game of `volume` runs, or a Transfer, move or uninstall
+    /// works there, including a Transfer or move still waiting in the queue.
+    fn busy_on(&self, volume: &Path) -> bool {
+        let running = self.sessions.state().active.map(|active| active.game);
+        let inner = self.inner.lock().unwrap();
+        let on_volume = |game: &S::Game| {
+            inner.state.receipts.iter().any(|receipt| {
+                receipt.game() == *game && Path::new(&receipt.directory).starts_with(volume)
+            })
+        };
+        running.as_ref().is_some_and(on_volume)
+            || inner.state.uninstall_game.as_ref().is_some_and(on_volume)
+            || inner
+                .queued
+                .iter()
+                .any(|queued| Self::lands_on_volume(&inner, queued, volume))
+    }
+
+    /// Takes out of the queue every Transfer or move that writes to `volume`
+    /// or moves away from it; the one under way stops, keeping what it
+    /// verified.
+    fn leaving(&self, volume: &Path) {
+        let ids: Vec<u64> = {
+            let inner = self.inner.lock().unwrap();
+            inner
+                .queued
+                .iter()
+                .filter(|queued| Self::lands_on_volume(&inner, queued, volume))
+                .map(|queued| queued.id)
+                .collect()
+        };
+        for id in ids {
+            self.queueing.queue.remove(id);
+        }
+    }
+
     /// Shows the installations whose disk is connected, the receipts whose
     /// folder moved into the games folder naming it, and saves them.
     fn refresh(&self) {
@@ -2095,6 +2136,23 @@ fn sort<S: Storefront>(
 }
 
 impl<S: Storefront> Shared<S> {
+    /// Whether `queued` writes to `volume`: its Transfer's folder or the
+    /// installation it updates is there, or it moves an installation there
+    /// or away from there.
+    fn lands_on_volume(inner: &Inner<S>, queued: &Queued<S>, volume: &Path) -> bool {
+        let from = inner
+            .state
+            .receipts
+            .iter()
+            .filter(|receipt| queued.transfer.lands_on(receipt))
+            .any(|receipt| Path::new(&receipt.directory).starts_with(volume));
+        let to = match &queued.job {
+            Job::Move { to } => to.as_ref().is_some_and(|to| to.starts_with(volume)),
+            _ => queued.transfer.directory.starts_with(volume),
+        };
+        from || to
+    }
+
     /// Moves the installation `transfer` lands on into the games folder
     /// `folder`, as the queue's job `id`, and ends it in the queue. Its game
     /// shows the move as its Transfer, which a cancellation stops: a copy to
@@ -2144,7 +2202,8 @@ impl<S: Storefront> Shared<S> {
                     Ok(None) => {}
                     Err(reason) => {
                         if !inner.signed_out {
-                            inner.state.report = Some(Report::Move(reason));
+                            inner.state.report =
+                                Some(disk_format(folder, &reason).unwrap_or(Report::Move(reason)));
                         }
                     }
                 }
@@ -2242,6 +2301,15 @@ impl<S: Storefront> Shared<S> {
         });
         Ok(Some(moved))
     }
+}
+
+/// What a disk write that failed with `reason` in `location`, a folder that
+/// holds games, tells the player when the disk's format could not hold it.
+fn disk_format(location: &Path, reason: &str) -> Option<Report> {
+    let format = obelisk_core::volume::Format::of(location)?;
+    format
+        .refused(reason)
+        .then(|| Report::DiskFormat(location.to_owned(), format.title().to_owned()))
 }
 
 fn removal_reason(failure: obelisk_core::installation::RemovalFailure) -> Failure {
