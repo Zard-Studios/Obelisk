@@ -184,14 +184,14 @@ impl<G: PartialEq> Opening<G> {
 }
 
 /// What the Reservation lets start now. A Game session holds its own game's
-/// files, a Transfer its own game, and an uninstall or Cloud maintenance the
-/// whole storefront's installations.
+/// files, a Transfer and an uninstall their own game, and Cloud maintenance
+/// the whole storefront's installations.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Gate<G> {
     /// A Transfer, which waits in the download queue.
     pub modify: Opening<G>,
-    /// An uninstall: no Transfer, launch or other uninstall of the
-    /// storefront runs.
+    /// An uninstall: no launch or other uninstall of the storefront runs,
+    /// and no Transfer of its game.
     pub uninstall: Opening<G>,
     /// A launch: no Game session runs. A Transfer holds only its own game.
     pub launch: Opening<G>,
@@ -267,6 +267,9 @@ pub enum Report {
 pub struct State<S: Storefront> {
     pub revision: u64,
     pub receipts: Vec<Receipt<S>>,
+    /// The receipts whose disk is not connected: saved, shown apart, and only
+    /// forgotten until their disk comes back.
+    pub offline: Vec<Receipt<S>>,
     /// The last Transfer progress.
     pub transfer: Option<TransferProgress>,
     /// The game the last Transfer progress belongs to.
@@ -325,8 +328,6 @@ pub struct Queueing<S: Storefront> {
 
 struct Inner<S: Storefront> {
     state: State<S>,
-    /// The receipts whose disk is not connected: saved, never shown.
-    offline: Vec<Receipt<S>>,
     signed_out: bool,
     /// A DEBUG diagnostic fences the storefront like a Game session would.
     diagnostic: bool,
@@ -1041,8 +1042,9 @@ fn gate<S: Storefront>(inner: &Inner<S>, sessions: &sessions::State<S>) -> Gate<
             except: busy.iter().cloned().chain(uninstalled.clone()).collect(),
         },
     };
-    // An uninstall has the storefront's installations to itself.
-    let uninstall = match held || state.downloading || state.launching || uninstalled.is_some() {
+    // One uninstall at a time, never during a launch: a Transfer holds only
+    // its own game.
+    let uninstall = match held || state.launching || uninstalled.is_some() {
         true => Opening::Closed,
         false => Opening::Open { except: busy },
     };
@@ -1153,7 +1155,7 @@ impl<S: Storefront> Inner<S> {
         self.state
             .receipts
             .iter()
-            .chain(&self.offline)
+            .chain(&self.state.offline)
             .cloned()
             .collect()
     }
@@ -1205,10 +1207,10 @@ impl<S: Storefront> Installations<S> {
     ) -> Self {
         let library = folder.library().to_owned();
         let mut inner = Inner {
-            offline: Vec::new(),
             state: State {
                 revision: 1,
                 receipts: Vec::new(),
+                offline: Vec::new(),
                 transfer: None,
                 transfer_game: None,
                 downloading: false,
@@ -1255,7 +1257,7 @@ impl<S: Storefront> Installations<S> {
                     changed |= S::complete(receipt);
                 }
                 inner.state.receipts = receipts;
-                inner.offline = offline;
+                inner.state.offline = offline;
                 if changed && save(&receipts_file, &inner.saved()).is_err() {
                     Shared::<S>::warn(&mut inner, S::RECEIPTS_NOT_SAVED);
                 }
@@ -1622,32 +1624,18 @@ impl<S: Storefront> Installations<S> {
             }
             inner.state.uninstall_game = Some(game.clone());
             inner.state.report = None;
-            let remaining: Vec<_> = inner
-                .state
-                .receipts
-                .iter()
-                .filter(|kept| **kept != receipt)
-                .cloned()
-                .collect();
-            // The file keeps the receipts whose disk is not connected.
-            let saved: Vec<_> = inner
-                .saved()
-                .into_iter()
-                .filter(|kept| *kept != receipt)
-                .collect();
-            Some((remaining, saved, receipt, game))
+            Some((receipt, game))
         });
-        let Some((remaining, saved, receipt, game)) = remaining else {
+        let Some((receipt, game)) = remaining else {
             return;
         };
         let shared = shared.clone();
         runtime().spawn(async move {
-            let outcome = shared.remove(&receipt, &saved).await;
+            let outcome = shared.remove(&receipt).await;
             shared.update(|inner| {
                 inner.state.uninstall_game = None;
                 match outcome {
                     Ok(true) => {
-                        inner.state.receipts = remaining;
                         if inner
                             .state
                             .last_download
@@ -1673,6 +1661,38 @@ impl<S: Storefront> Installations<S> {
                     }
                 }
             });
+        });
+    }
+
+    /// Forgets the installation `receipt` names whose disk is not connected,
+    /// as the player asked: its files stay on that disk. Its Wine prefix and
+    /// launch settings stay, and the Cloud record notes the removal, so a
+    /// save missing locally is never sent as deleted.
+    pub fn forget(&self, receipt: &str) {
+        let shared = &self.shared;
+        let forgotten = shared.update(|inner| {
+            let receipt = inner
+                .state
+                .offline
+                .iter()
+                .find(|kept| kept.id() == receipt)
+                .cloned()?;
+            if !shared.gate(inner).uninstall.allows(&receipt.game()) {
+                return None;
+            }
+            inner.state.offline.retain(|kept| *kept != receipt);
+            inner.state.report = None;
+            shared.save(inner);
+            Some(receipt)
+        });
+        let Some(receipt) = forgotten else {
+            return;
+        };
+        let shared = shared.clone();
+        runtime().spawn(async move {
+            if let Err(Failure::Failed(reason)) = shared.content.removed(&receipt).await {
+                shared.update(|inner| inner.state.report = Some(Report::Uninstall(reason)));
+            }
         });
     }
 
@@ -1825,13 +1845,9 @@ impl<S: Storefront> Installations<S> {
 }
 
 impl<S: Storefront> Shared<S> {
-    /// Removes the installation, then saves the receipts `remaining`;
-    /// `Ok(false)` when sign-out came first.
-    async fn remove(
-        &self,
-        receipt: &Receipt<S>,
-        remaining: &[Receipt<S>],
-    ) -> Result<bool, Failure> {
+    /// Removes the installation, then its receipt, keeping those other
+    /// Transfers saved meanwhile; `Ok(false)` when sign-out came first.
+    async fn remove(&self, receipt: &Receipt<S>) -> Result<bool, Failure> {
         let signed_out = || self.inner.lock().unwrap().signed_out;
         if signed_out() {
             return Ok(false);
@@ -1843,18 +1859,22 @@ impl<S: Storefront> Shared<S> {
         let directory = PathBuf::from(&receipt.directory);
         let expected = self.content.directory_name(receipt);
         let protected: Vec<_> = self.protected.clone();
-        let file = self.receipts_file.clone();
-        let remaining = remaining.to_vec();
         let removal = tokio::task::spawn_blocking(move || {
             let protected: Vec<&Path> = protected.iter().map(PathBuf::as_path).collect();
             obelisk_core::installation::remove(&directory, &expected, &protected)
-                .map_err(removal_reason)?;
-            // The captured account's receipts are updated even if it signs
-            // out while the files go.
-            save(&file, &remaining).map_err(sessions::failed)
+                .map_err(removal_reason)
         })
         .await
-        .unwrap_or_else(|_| Err(Failure::Failed("model.game.installationBusy".into())));
+        .unwrap_or_else(|_| Err(Failure::Failed("model.game.installationBusy".into())))
+        .and_then(|()| {
+            // The account's receipts are updated even if it signs out while
+            // the files go. The file keeps those whose disk is not connected.
+            self.update(|inner| {
+                inner.state.receipts.retain(|kept| kept != receipt);
+                inner.state.offline.retain(|kept| kept != receipt);
+                save(&self.receipts_file, &inner.saved()).map_err(sessions::failed)
+            })
+        });
         if let Err(error) = removal {
             // Receipt persistence can fail after the folder was removed. The
             // Cloud fence must still record that removal.
@@ -1958,7 +1978,7 @@ impl<S: Storefront> Resident for Shared<S> {
         self.update(|inner| {
             let (receipts, offline, changed) = sort(inner.saved(), &self.folder);
             inner.state.receipts = receipts;
-            inner.offline = offline;
+            inner.state.offline = offline;
             if changed {
                 self.save(inner);
             }

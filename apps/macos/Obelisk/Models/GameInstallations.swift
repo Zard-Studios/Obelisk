@@ -127,6 +127,8 @@ struct InstallationsSnapshot<Store: InstallationStorefront>: Equatable {
     var cloudSync: GameCloudSync<Store.GameID>?
     /// The games whose Transfer waits in the download queue.
     var queued: [Store.GameID] = []
+    /// The installations whose disk is not connected.
+    var offline: [InstallationReceipt<Store.GameID>] = []
 }
 
 /// One account's installations of one storefront, in Rust. Each action
@@ -158,6 +160,9 @@ protocol InstallationsBackend<Store>: AnyObject {
     /// joining `invite`.
     func join(_ receipt: InstallationReceipt<Store.GameID>, invite: SteamGameInvite)
     func uninstall(_ receipt: InstallationReceipt<Store.GameID>)
+    /// Forgets `receipt`'s installation, whose disk is not connected; its
+    /// files stay on that disk.
+    func forget(_ receipt: InstallationReceipt<Store.GameID>)
     func signedOut()
     /// Syncs the game's Cloud saves: those of `installed`, or an uninstalled
     /// game's when nil.
@@ -192,6 +197,9 @@ final class GameInstallations<Store: InstallationStorefront> {
             for game in Set(oldValue.map(\.gameID)).subtracting(receipts.map(\.gameID)) { port?.uninstalled(game) }
         }
     }
+    /// The installations whose disk is not connected: they show apart, and
+    /// can only be forgotten until their disk comes back.
+    private(set) var offline: [Receipt] = []
     private(set) var transfer: GameTransfer?
     /// The game the last Transfer progress belongs to.
     private(set) var transferGame: Store.GameID?
@@ -295,6 +303,7 @@ final class GameInstallations<Store: InstallationStorefront> {
         report = nil
         warning = nil
         receipts = []
+        offline = []
         transfer = nil
         transferGame = nil
         resumableGame = nil
@@ -312,6 +321,7 @@ final class GameInstallations<Store: InstallationStorefront> {
         revision = snapshot.revision
         // Repeated snapshots do not invalidate unchanged presentation.
         if receipts != snapshot.receipts { receipts = snapshot.receipts }
+        if offline != snapshot.offline { offline = snapshot.offline }
         if transfer != snapshot.transfer { transfer = snapshot.transfer }
         if transferGame != snapshot.transferGame { transferGame = snapshot.transferGame }
         if isDownloading != snapshot.downloading { isDownloading = snapshot.downloading }
@@ -518,6 +528,34 @@ final class GameInstallations<Store: InstallationStorefront> {
         act { $0.uninstall(receipt) }
     }
 
+    /// Forgets an installation whose disk is not connected: its files stay
+    /// on that disk.
+    func forget(_ receipt: Receipt) {
+        guard account != nil, gate.uninstall.allows(receipt.gameID), offline.contains(receipt) else { return }
+        act { $0.forget(receipt) }
+    }
+
+    /// What the menus of `selection`'s game offer: managing its installation,
+    /// else forgetting the one whose disk is not connected.
+    func management(of selection: InstallationSelection<Store>) -> GameManagement? {
+        let game = selection.game
+        let canRemove = account != nil && gate.uninstall.allows(game)
+        if let receipt = receipt(for: game, preferring: selection.platform) {
+            return GameManagement(
+                directory: receipt.directory, offlineVolume: nil, canVerify: account != nil && canModify(game),
+                canRemove: canRemove, verify: { [weak self] in self?.verify(receipt) },
+                remove: { [weak self] in self?.uninstall(receipt) })
+        }
+        let away = Receipt.preferred(among: offline.filter { $0.gameID == game }, platform: selection.platform)
+        guard let away else { return nil }
+        return GameManagement(
+            directory: away.directory, offlineVolume: GameManagement.volume(of: away.directory) ?? "",
+            canVerify: false, canRemove: canRemove, verify: {}, remove: { [weak self] in self?.forget(away) })
+    }
+
+    /// What the menus of the game on screen offer.
+    var selectedManagement: GameManagement? { selection().flatMap(management(of:)) }
+
     // MARK: Launch settings
 
     /// The launch settings of an installed Windows build; nil for a Mac build
@@ -598,6 +636,7 @@ final class NoInstallations<Store: InstallationStorefront>: InstallationsBackend
     func launch(_ receipt: InstallationReceipt<Store.GameID>) {}
     func join(_ receipt: InstallationReceipt<Store.GameID>, invite: SteamGameInvite) {}
     func uninstall(_ receipt: InstallationReceipt<Store.GameID>) {}
+    func forget(_ receipt: InstallationReceipt<Store.GameID>) {}
     func signedOut() {}
     func maintainCloud(_ game: Store.GameID, installed: InstallationReceipt<Store.GameID>?) {}
     func answerCloud(_ game: Store.GameID, decisionId: UInt64, choice: CloudChoice) async throws {
@@ -638,6 +677,7 @@ final class RustInstallations<Store: InstallationStorefront>: InstallationsBacke
         core.join(installation: receipt.id, invite: invite)
     }
     func uninstall(_ receipt: InstallationReceipt<Store.GameID>) { core.uninstall(installation: receipt.id) }
+    func forget(_ receipt: InstallationReceipt<Store.GameID>) { core.forget(installation: receipt.id) }
     func signedOut() { core.signedOut() }
     func maintainCloud(_ game: Store.GameID, installed: InstallationReceipt<Store.GameID>?) {
         core.maintainCloud(game: Store.name(game), installation: installed?.id)
@@ -664,15 +704,7 @@ final class RustInstallations<Store: InstallationStorefront>: InstallationsBacke
     private static func snapshot(_ state: InstallationsState) -> InstallationsSnapshot<Store> {
         InstallationsSnapshot(
             revision: state.revision,
-            receipts: state.installations.compactMap { installation in
-                Store.game(installation.game).map {
-                    InstallationReceipt(id: installation.id, gameID: $0, name: installation.name,
-                                        directory: installation.directory, platform: installation.platform,
-                                        totalBytes: installation.totalBytes,
-                                        needsVerification: installation.needsVerification,
-                                        updateAvailable: installation.updateAvailable)
-                }
-            },
+            receipts: state.installations.compactMap(receipt),
             transfer: state.transfer, transferGame: state.transferGame.flatMap(Store.game),
             downloading: state.downloading, launching: state.launching,
             verifyingBeforeLaunch: state.verifyingBeforeLaunch, launchGame: state.launchGame.flatMap(Store.game),
@@ -686,7 +718,45 @@ final class RustInstallations<Store: InstallationStorefront>: InstallationsBacke
                                   question: sync.question)
                 }
             },
-            queued: state.queued.compactMap(Store.game)
+            queued: state.queued.compactMap(Store.game),
+            offline: state.offline.compactMap(receipt)
         )
+    }
+
+    private static func receipt(_ installation: Installation) -> InstallationReceipt<Store.GameID>? {
+        Store.game(installation.game).map {
+            InstallationReceipt(id: installation.id, gameID: $0, name: installation.name,
+                                directory: installation.directory, platform: installation.platform,
+                                totalBytes: installation.totalBytes,
+                                needsVerification: installation.needsVerification,
+                                updateAvailable: installation.updateAvailable)
+        }
+    }
+}
+
+/// What a game's menus offer, on its page and on its cover: its
+/// installation's folder, verification and uninstall, or forgetting an
+/// installation whose disk is not connected.
+struct GameManagement {
+    /// The installation's folder, revealed in Finder.
+    let directory: String
+    /// The name of the disk that holds the installation, when it is not
+    /// connected: then it can only be forgotten.
+    let offlineVolume: String?
+    let canVerify: Bool
+    /// Whether the installation may be uninstalled, or forgotten.
+    let canRemove: Bool
+    /// Verifies the installed game's files, repairing or updating them.
+    let verify: () -> Void
+    /// Uninstalls the installation, or forgets it.
+    let remove: () -> Void
+
+    var isOffline: Bool { offlineVolume != nil }
+
+    /// The disk an external folder lies on: /Volumes/<disk>/…
+    static func volume(of directory: String) -> String? {
+        let components = URL(filePath: directory).pathComponents
+        guard components.count > 2, components[1] == "Volumes" else { return nil }
+        return components[2]
     }
 }

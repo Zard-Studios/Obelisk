@@ -700,6 +700,12 @@ public protocol AccountInstallationsProtocol: AnyObject, Sendable {
     func cloudIndicators(games: [String]) async throws  -> [GameCloudIndicator]
     
     /**
+     * Forgets the `installation` whose disk is not connected; its files
+     * stay on that disk.
+     */
+    func forget(installation: String) 
+    
+    /**
      * Installs what `offer` names, or updates the game's installation; a
      * Transfer of the game that stopped resumes instead. An offer of the
      * other storefront does nothing.
@@ -959,6 +965,19 @@ open func cloudIndicators(games: [String])async throws  -> [GameCloudIndicator] 
             liftFunc: FfiConverterSequenceTypeGameCloudIndicator.lift,
             errorHandler: FfiConverterTypeGameSessionError_lift
         )
+}
+    
+    /**
+     * Forgets the `installation` whose disk is not connected; its files
+     * stay on that disk.
+     */
+open func forget(installation: String)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_method_accountinstallations_forget(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(installation),uniffiCallStatus
+    )
+}
 }
     
     /**
@@ -7564,8 +7583,8 @@ public struct InstallationGate: Equatable, Hashable {
      */
     public var modify: GameOpening
     /**
-     * An uninstall: no Transfer, launch or other uninstall of the storefront
-     * runs.
+     * An uninstall: no launch or other uninstall of the storefront runs, and
+     * no Transfer of its game.
      */
     public var uninstall: GameOpening
     /**
@@ -7582,8 +7601,8 @@ public struct InstallationGate: Equatable, Hashable {
          * A Transfer, which waits in the download queue.
          */modify: GameOpening, 
         /**
-         * An uninstall: no Transfer, launch or other uninstall of the storefront
-         * runs.
+         * An uninstall: no launch or other uninstall of the storefront runs, and
+         * no Transfer of its game.
          */uninstall: GameOpening, 
         /**
          * A launch: a Transfer holds only its own game, and those whose launch
@@ -7708,6 +7727,10 @@ public struct InstallationsState: Equatable, Hashable {
      */
     public var revision: UInt64
     public var installations: [Installation]
+    /**
+     * The installations whose disk is not connected.
+     */
+    public var offline: [Installation]
     public var transfer: GameTransfer?
     /**
      * The game the last Transfer progress belongs to.
@@ -7737,7 +7760,10 @@ public struct InstallationsState: Equatable, Hashable {
     public init(
         /**
          * Grows with every change.
-         */revision: UInt64, installations: [Installation], transfer: GameTransfer?, 
+         */revision: UInt64, installations: [Installation], 
+        /**
+         * The installations whose disk is not connected.
+         */offline: [Installation], transfer: GameTransfer?, 
         /**
          * The game the last Transfer progress belongs to.
          */transferGame: String?, downloading: Bool, launching: Bool, verifyingBeforeLaunch: Bool, launchGame: String?, uninstallGame: String?, 
@@ -7750,6 +7776,7 @@ public struct InstallationsState: Equatable, Hashable {
          */queued: [String]) {
         self.revision = revision
         self.installations = installations
+        self.offline = offline
         self.transfer = transfer
         self.transferGame = transferGame
         self.downloading = downloading
@@ -7783,6 +7810,7 @@ public struct FfiConverterTypeInstallationsState: FfiConverterRustBuffer {
             try InstallationsState(
                 revision: FfiConverterUInt64.read(from: &buf), 
                 installations: FfiConverterSequenceTypeInstallation.read(from: &buf), 
+                offline: FfiConverterSequenceTypeInstallation.read(from: &buf), 
                 transfer: FfiConverterOptionTypeGameTransfer.read(from: &buf), 
                 transferGame: FfiConverterOptionString.read(from: &buf), 
                 downloading: FfiConverterBool.read(from: &buf), 
@@ -7802,6 +7830,7 @@ public struct FfiConverterTypeInstallationsState: FfiConverterRustBuffer {
     public static func write(_ value: InstallationsState, into buf: inout [UInt8]) {
         FfiConverterUInt64.write(value.revision, into: &buf)
         FfiConverterSequenceTypeInstallation.write(value.installations, into: &buf)
+        FfiConverterSequenceTypeInstallation.write(value.offline, into: &buf)
         FfiConverterOptionTypeGameTransfer.write(value.transfer, into: &buf)
         FfiConverterOptionString.write(value.transferGame, into: &buf)
         FfiConverterBool.write(value.downloading, into: &buf)
@@ -15986,6 +16015,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_accountinstallations_cloud_indicators() != 38851) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_accountinstallations_forget() != 4231) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_accountinstallations_install() != 6039) {

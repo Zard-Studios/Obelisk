@@ -125,24 +125,24 @@ struct GameDetailPage<Model: LibraryStorefront, HeroArtwork: View, Cover: View, 
                         GameReportButton(subject: .game(store: Model.Store.storefront, id: id, name: name),
                                          gameName: name)
                     }
-                    if let receipt = installations.selectedReceipt {
+                    // An installation whose disk is not connected shows its own menu.
+                    if let management = installations.selectedManagement {
+                        let receipt = installations.selectedReceipt
                         GameManagementButton(
                             gameName: name,
-                            canVerify: installations.canVerifySelectedGame,
-                            canUninstall: installations.canUninstallSelectedGame,
-                            verify: { installations.verify(receipt) },
-                            uninstall: { installations.uninstall(receipt) },
-                            directory: receipt.directory,
-                            launchSettings: receipt.platform == .mac ? nil : {
-                                launchSettings = LaunchSettingsModel(
-                                    load: { [installations] in try await installations.launchSettings(receipt) },
-                                    save: { [installations] in
-                                        try await installations.setLaunchSettings(receipt, choices: $0)
-                                    }
-                                )
+                            management: management,
+                            launchSettings: receipt.flatMap { receipt in
+                                receipt.platform == .mac ? nil : {
+                                    launchSettings = LaunchSettingsModel(
+                                        load: { [installations] in try await installations.launchSettings(receipt) },
+                                        save: { [installations] in
+                                            try await installations.setLaunchSettings(receipt, choices: $0)
+                                        }
+                                    )
+                                }
                             }
                         )
-                        .id(receipt.id + receipt.directory)
+                        .id((receipt?.id ?? "offline") + management.directory)
                     }
                 }
                 .padding(.top, 18)

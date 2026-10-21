@@ -16,6 +16,7 @@ final class FakeInstallations<Store: InstallationStorefront>: InstallationsBacke
         case launch(InstallationReceipt<Store.GameID>)
         case join(InstallationReceipt<Store.GameID>, SteamGameInvite)
         case uninstall(InstallationReceipt<Store.GameID>)
+        case forget(InstallationReceipt<Store.GameID>)
         case signedOut
         case maintain(Store.GameID, installed: InstallationReceipt<Store.GameID>?)
         case answer(Store.GameID, decision: UInt64, CloudChoice)
@@ -75,6 +76,7 @@ final class FakeInstallations<Store: InstallationStorefront>: InstallationsBacke
         record(.join(receipt, invite))
     }
     func uninstall(_ receipt: InstallationReceipt<Store.GameID>) { record(.uninstall(receipt)) }
+    func forget(_ receipt: InstallationReceipt<Store.GameID>) { record(.forget(receipt)) }
     func signedOut() { record(.signedOut) }
     func maintainCloud(_ game: Store.GameID, installed: InstallationReceipt<Store.GameID>?) {
         record(.maintain(game, installed: installed))
@@ -179,10 +181,10 @@ extension InstallationsGate {
         Self(modify: .closed, uninstall: .closed, launch: .closed, maintain: .open(except: [game]))
     }
 
-    /// A Transfer of `game` runs: other games may queue theirs and launch,
-    /// none may be uninstalled.
+    /// A Transfer of `game` runs: other games may queue theirs, launch and
+    /// be uninstalled.
     static func transfer(_ game: GameID) -> Self {
-        Self(modify: .open(except: [game]), uninstall: .closed, launch: .open(except: [game]),
+        Self(modify: .open(except: [game]), uninstall: .open(except: [game]), launch: .open(except: [game]),
              maintain: .open(except: [game]))
     }
 }

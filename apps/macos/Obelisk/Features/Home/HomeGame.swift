@@ -27,6 +27,8 @@ struct HomeGame: Identifiable {
     let hero: Hero
     /// Opens the game's page in its storefront.
     let open: () -> Void
+    /// What its cover's context menu offers to manage of its installation.
+    var management: GameManagement?
 }
 
 /// One account's library as Home shows it, built only for the games Home lists.
@@ -46,10 +48,11 @@ struct HomeLibrary {
 extension HomeGame {
     /// `game` of `library`, named, dated and timed as the library knows it.
     init<Store, Game>(_ game: Game, of library: AccountLibrary<Store, Game>, in section: LibrarySection,
-                      action: GameAction, cover: @escaping () -> AnyView, hero: Hero, open: @escaping () -> Void) {
+                      action: GameAction, management: GameManagement? = nil, cover: @escaping () -> AnyView,
+                      hero: Hero, open: @escaping () -> Void) {
         self.init(id: ID(section: section, game: "\(game.id)"), title: game.title,
                   lastPlayed: library.lastPlayed(of: game), playtime: library.playtime(of: game),
-                  action: action, cover: cover, hero: hero, open: open)
+                  action: action, cover: cover, hero: hero, open: open, management: management)
     }
 }
 
@@ -103,9 +106,11 @@ extension LibraryStorefront {
         heroArtwork: @escaping (Game) -> Artwork,
         heroLogo: @escaping (Game) -> Logo
     ) -> HomeGame {
-        HomeGame(
+        let selection = librarySelection(game)
+        return HomeGame(
             game, of: library, in: section,
-            action: actions(librarySelection(game)),
+            action: actions(selection),
+            management: installations.management(of: selection),
             cover: { AnyView(cover(game)) },
             hero: HomeGame.Hero(artwork: { AnyView(heroArtwork(game)) }, logo: { AnyView(heroLogo(game)) }),
             open: { self.open(game) }

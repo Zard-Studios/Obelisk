@@ -175,6 +175,45 @@ final class GameActionTests: XCTestCase {
         XCTAssertEqual(fixture.backend.actions, [], "Swift forwards nothing the gate refuses")
     }
 
+    func testAnotherGamesTransferLeavesThisGameFreeToUninstall() async throws {
+        let fixture = InstallationsFixture()
+        let installations = fixture.connect()
+        fixture.backend.publish { $0.gate = .transfer(730) }
+        try await eventually { installations.gate == .transfer(730) }
+
+        XCTAssertTrue(installations.canUninstallSelectedGame)
+        let management = try XCTUnwrap(installations.selectedManagement)
+        XCTAssertFalse(management.isOffline)
+        XCTAssertEqual(management.directory, fixture.receipt.directory)
+        XCTAssertTrue(management.canRemove)
+        management.remove()
+        XCTAssertEqual(fixture.backend.actions, [.uninstall(fixture.receipt)])
+    }
+
+    func testAnInstallationOnADisconnectedDiskCanOnlyBeForgotten() async throws {
+        let fixture = InstallationsFixture(installed: false)
+        let installations = fixture.connect()
+        let away = InstallationReceipt.steam(appId: 620, name: "Portal 2",
+                                             directory: "/Volumes/Games SSD/Obelisk Games/Steam/steam-620-macos",
+                                             platform: .mac)
+        fixture.backend.publish { $0.offline = [away] }
+        try await eventually { installations.offline == [away] }
+
+        XCTAssertNil(installations.selectedReceipt, "Its game shows as not installed")
+        let management = try XCTUnwrap(installations.selectedManagement)
+        XCTAssertEqual(management.offlineVolume, "Games SSD")
+        XCTAssertFalse(management.canVerify)
+        management.verify()
+        management.remove()
+        XCTAssertEqual(fixture.backend.actions, [.forget(away)])
+
+        // The game runs: its installation stays.
+        fixture.backend.publish { $0.gate = .session(620) }
+        try await eventually { installations.selectedManagement?.canRemove == false }
+        installations.forget(away)
+        XCTAssertEqual(fixture.backend.actions, [.forget(away)])
+    }
+
     func testANewerBuildTurnsThePagesActionIntoAnUpdate() async throws {
         let fixture = InstallationsFixture()
         let installations = fixture.connect()

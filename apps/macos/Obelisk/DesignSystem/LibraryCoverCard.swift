@@ -12,6 +12,8 @@ struct LibraryCoverCard<Artwork: View>: View {
     /// What the game's button shows and does. Its button reads the Transfer's
     /// progress alone, so a progress tick redraws only the button.
     let action: GameAction
+    /// What the cover's context menu offers to manage of its installation.
+    var management: GameManagement?
     /// The game, matching this cover with the one on its page as it opens.
     let matchID: AnyHashable
     let open: () -> Void
@@ -20,6 +22,7 @@ struct LibraryCoverCard<Artwork: View>: View {
     /// The Force Quit its player is asked to confirm. The card asks, not its
     /// bar, which goes as the alert takes the pointer.
     @State private var asking: GameAction?
+    @State private var confirmsRemoval = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -80,7 +83,13 @@ struct LibraryCoverCard<Artwork: View>: View {
         .scaleEffect(hovered && !reduceMotion ? 1.03 : 1)
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.72), value: hovered)
         .onHover { hovered = $0 }
+        .contextMenu {
+            if let management {
+                GameManagementItems(management: management, confirmsRemoval: $confirmsRemoval)
+            }
+        }
         .forceQuitConfirmation(title, for: action, asking: $asking)
+        .removalConfirmation(title, management: management, isPresented: $confirmsRemoval)
     }
 }
 

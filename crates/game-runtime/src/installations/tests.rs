@@ -1519,15 +1519,15 @@ async fn the_gate_shows_what_may_start_and_follows_every_game_session() {
     drop(admission);
     eventually(|| fixture.installations.state().gate == open).await;
 
-    // A Transfer holds its own game and every uninstall: other games still
-    // queue and launch.
+    // A Transfer holds its own game: other games still queue, launch and
+    // uninstall.
     fixture.fake.hold();
     fixture.installations.install(fixture.offer());
     assert_eq!(
         fixture.installations.state().gate,
         Gate {
             modify: Opening::Open { except: vec![620] },
-            uninstall: Opening::Closed,
+            uninstall: Opening::Open { except: vec![620] },
             launch: Opening::Open { except: vec![620] },
             maintain: Opening::Open { except: vec![620] },
         }
@@ -2054,6 +2054,61 @@ async fn an_installation_on_a_disconnected_disk_is_kept_but_not_shown() {
     eventually(|| fixture.saved() == [away.clone()]).await;
     fixture.folder.volumes_changed();
     assert!(reloaded.state().receipts.is_empty());
+    assert_eq!(reloaded.state().offline, [away]);
+}
+
+#[tokio::test]
+async fn an_installation_on_a_disconnected_disk_can_be_forgotten() {
+    let fixture = Fixture::new(true).await;
+    let file = fixture.root.join("steam-installations-42.json");
+    let away = receipt(
+        Path::new(
+            "/Volumes/Obelisk Test Disk That Is Not There/Obelisk Games/Steam/steam-620-windows",
+        ),
+        Platform::Windows,
+    );
+    let mut saved = fixture.saved();
+    saved.push(away.clone());
+    save(&file, &saved).unwrap();
+    let reloaded = fixture.reload(file);
+
+    // Only a receipt whose disk is not connected is forgotten.
+    reloaded.forget("620-macos");
+    assert_eq!(reloaded.state().receipts.len(), 1);
+
+    reloaded.forget("620-windows");
+    let state = reloaded.state();
+    assert!(state.offline.is_empty());
+    assert_eq!(state.receipts.len(), 1);
+    assert_eq!(fixture.saved(), state.receipts);
+}
+
+#[tokio::test]
+async fn another_game_uninstalls_while_a_transfer_runs_and_both_receipts_stay_right() {
+    let fixture = Fixture::new(true).await;
+    fixture.fake.hold();
+    fixture.installations.install(Offer {
+        product: Product {
+            app_id: 730,
+            ..portal()
+        },
+        ..fixture.offer()
+    });
+    eventually(|| fixture.fake.calls() == ["download:730"]).await;
+    let receipt = fixture.receipt();
+
+    fixture.installations.uninstall("620-macos");
+    eventually(|| fixture.installations.state().receipts.is_empty()).await;
+    eventually(|| fixture.installations.state().uninstall_game.is_none()).await;
+    assert!(!Path::new(&receipt.directory).exists());
+    assert!(fixture.installations.state().downloading);
+
+    fixture.fake.release();
+    idle(&fixture.installations).await;
+    let state = fixture.installations.state();
+    let games: Vec<u32> = state.receipts.iter().map(Receipt::game).collect();
+    assert_eq!(games, [730]);
+    assert_eq!(fixture.saved(), state.receipts);
 }
 
 #[tokio::test]

@@ -374,6 +374,7 @@ private struct HomePage: View {
                 .joined(separator: " · "),
             store: game.id.section,
             action: game.action,
+            management: game.management,
             matchID: card,
             open: { open(game, .cover, card) }
         ) {

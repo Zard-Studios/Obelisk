@@ -6941,6 +6941,74 @@
         }
       }
     },
+    "ui.game.offline": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On “%@”, which is not connected"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sur « %@ », qui n’est pas connecté"
+          }
+        }
+      }
+    },
+    "ui.game.forget": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove from Library"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer de la bibliothèque"
+          }
+        }
+      }
+    },
+    "ui.game.forget_title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove %@ from the library?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer %@ de la bibliothèque ?"
+          }
+        }
+      }
+    },
+    "ui.game.forget_message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@” is not connected, so the game’s files stay on it. You can delete them in Finder once it is connected again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "« %@ » n’est pas connecté : les fichiers du jeu y restent. Vous pourrez les supprimer dans le Finder une fois qu’il sera à nouveau connecté."
+          }
+        }
+      }
+    },
     "ui.library.account_game_count": {
       "extractionState": "manual",
       "localizations": {

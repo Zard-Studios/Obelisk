@@ -248,6 +248,7 @@ struct StorefrontLibraryPage<Model: LibraryStorefront, HeroArtwork: View, HeroLo
                     help: [title, model.library.playtime(of: game).map(GameFormatting.playtime)].compactMap { $0 }
                         .joined(separator: " · "),
                     action: actions(model.librarySelection(game)),
+                    management: model.installations.management(of: model.librarySelection(game)),
                     matchID: game.id,
                     open: { open(game, .cover) }
                 ) {

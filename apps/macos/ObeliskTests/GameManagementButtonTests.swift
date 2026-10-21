@@ -7,7 +7,7 @@ final class GameManagementButtonTests: XCTestCase {
     @MainActor
     func testManagementControlKeepsASquareFootprint() async {
         let fixture = ManagementButtonWindow(
-            GameManagementButton(gameName: "Portal 2", canVerify: true, canUninstall: true, verify: {}, uninstall: {}, directory: "/Applications")
+            GameManagementButton(gameName: "Portal 2", management: .applications(available: true))
         )
         defer { fixture.close() }
         await fixture.prepare()
@@ -20,7 +20,7 @@ final class GameManagementButtonTests: XCTestCase {
     func testManagementAccessibilityNamesTheGameAndReflectsAvailability() async throws {
         for isAvailable in [true, false] {
             let fixture = ManagementButtonWindow(
-                GameManagementButton(gameName: "Portal 2", canVerify: isAvailable, canUninstall: isAvailable, verify: {}, uninstall: {}, directory: "/Applications")
+                GameManagementButton(gameName: "Portal 2", management: .applications(available: isAvailable))
             )
             defer { fixture.close() }
             await fixture.prepare()
@@ -49,7 +49,7 @@ final class GameManagementButtonTests: XCTestCase {
                                        launches: true),
                     gameName: "Portal 2"
                 )
-                GameManagementButton(gameName: "Portal 2", canVerify: true, canUninstall: true, verify: {}, uninstall: {}, directory: "/Applications")
+                GameManagementButton(gameName: "Portal 2", management: .applications(available: true))
             }
             .padding(18)
             .environment(\.colorScheme, .dark)
@@ -80,6 +80,14 @@ final class GameManagementButtonTests: XCTestCase {
             if let match = accessibilityElement(in: child, identifier: identifier, depth: depth + 1) { return match }
         }
         return nil
+    }
+}
+
+private extension GameManagement {
+    /// An installation in /Applications whose actions do nothing.
+    static func applications(available: Bool) -> Self {
+        Self(directory: "/Applications", offlineVolume: nil, canVerify: available, canRemove: available,
+             verify: {}, remove: {})
     }
 }
 

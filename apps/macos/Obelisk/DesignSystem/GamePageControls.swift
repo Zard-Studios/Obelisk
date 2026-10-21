@@ -3,20 +3,14 @@ import SwiftUI
 
 struct GameManagementButton: View {
     let gameName: String
-    let canVerify: Bool
-    let canUninstall: Bool
-    /// Verifies the installed game's files, repairing or updating them.
-    let verify: () -> Void
-    let uninstall: () -> Void
-    /// The installed game's directory, revealed in Finder from the menu.
-    let directory: String
+    let management: GameManagement
     /// Opens a Windows build's launch settings; nil for a Mac build.
     var launchSettings: (() -> Void)?
-    @State private var confirmsUninstall = false
+    @State private var confirmsRemoval = false
 
     /// The menu opens while either of its actions may start, and whenever a
     /// Windows build's launch settings may change.
-    private var isAvailable: Bool { canVerify || canUninstall || launchSettings != nil }
+    private var isAvailable: Bool { management.canVerify || management.canRemove || launchSettings != nil }
 
     var body: some View {
         Menu {
@@ -25,18 +19,10 @@ struct GameManagementButton: View {
                        action: launchSettings)
                 Divider()
             }
-            Button(L10n.string("ui.game.show_files"), systemImage: "folder") {
-                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: directory)
-            }
-            Button(L10n.string("ui.game.verify_files"), systemImage: "checkmark.shield", action: verify)
-                .disabled(!canVerify)
-            Divider()
-            Button(L10n.string("ui.game.uninstall"), systemImage: "trash", role: .destructive) {
-                confirmsUninstall = true
-            }
-            .disabled(!canUninstall)
+            GameManagementItems(management: management, confirmsRemoval: $confirmsRemoval)
         } label: {
-            StorefrontGlassIcon(systemName: "gearshape.fill", size: 15)
+            StorefrontGlassIcon(systemName: management.isOffline ? "externaldrive.badge.xmark" : "gearshape.fill",
+                                size: 15)
                 .foregroundStyle(.primary)
         }
         .menuStyle(.button)
@@ -46,22 +32,55 @@ struct GameManagementButton: View {
         .disabled(!isAvailable)
         .accessibilityLabel(L10n.string("ui.game.manage_named", gameName))
         .accessibilityIdentifier("game-management-menu")
-        .help(L10n.string("ui.game.manage"))
-        .uninstallConfirmation(gameName, isPresented: $confirmsUninstall, canUninstall: canUninstall,
-                               uninstall: uninstall)
+        .help(management.offlineVolume.map { L10n.string("ui.game.offline", $0) } ?? L10n.string("ui.game.manage"))
+        .removalConfirmation(gameName, management: management, isPresented: $confirmsRemoval)
+    }
+}
+
+/// An installed game's management, in its page's menu and its cover's
+/// context menu: an installation whose disk is not connected can only be
+/// forgotten.
+struct GameManagementItems: View {
+    let management: GameManagement
+    @Binding var confirmsRemoval: Bool
+
+    var body: some View {
+        if let volume = management.offlineVolume {
+            Text(L10n.string("ui.game.offline", volume))
+            Button(L10n.string("ui.game.forget"), systemImage: "minus.circle", role: .destructive) {
+                confirmsRemoval = true
+            }
+            .disabled(!management.canRemove)
+        } else {
+            Button(L10n.string("ui.game.show_files"), systemImage: "folder") {
+                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: management.directory)
+            }
+            Button(L10n.string("ui.game.verify_files"), systemImage: "checkmark.shield", action: management.verify)
+                .disabled(!management.canVerify)
+            Divider()
+            Button(L10n.string("ui.game.uninstall"), systemImage: "trash", role: .destructive) {
+                confirmsRemoval = true
+            }
+            .disabled(!management.canRemove)
+        }
     }
 }
 
 extension View {
-    /// Asks before uninstalling `gameName`: its files are deleted.
-    func uninstallConfirmation(_ gameName: String, isPresented: Binding<Bool>, canUninstall: Bool,
-                               uninstall: @escaping () -> Void) -> some View {
-        alert(L10n.string("ui.game.uninstall_title", gameName), isPresented: isPresented) {
+    /// Asks before uninstalling `gameName`, whose files are deleted, or
+    /// before forgetting its installation whose disk is not connected.
+    func removalConfirmation(_ gameName: String, management: GameManagement?,
+                             isPresented: Binding<Bool>) -> some View {
+        let offline = management?.offlineVolume
+        return alert(L10n.string(offline == nil ? "ui.game.uninstall_title" : "ui.game.forget_title", gameName),
+                     isPresented: isPresented) {
             Button(L10n.string("ui.common.cancel"), role: .cancel) {}
-            Button(L10n.string("ui.game.uninstall"), role: .destructive, action: uninstall)
-                .disabled(!canUninstall)
+            Button(L10n.string(offline == nil ? "ui.game.uninstall" : "ui.game.forget"), role: .destructive) {
+                management?.remove()
+            }
+            .disabled(management?.canRemove != true)
         } message: {
-            Text(L10n.string("ui.game.uninstall_message"))
+            Text(offline.map { L10n.string("ui.game.forget_message", $0) } ?? L10n.string("ui.game.uninstall_message"))
         }
     }
 }

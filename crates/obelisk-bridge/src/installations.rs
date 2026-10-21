@@ -105,8 +105,8 @@ pub enum GameOpening {
 pub struct InstallationGate {
     /// A Transfer, which waits in the download queue.
     pub modify: GameOpening,
-    /// An uninstall: no Transfer, launch or other uninstall of the storefront
-    /// runs.
+    /// An uninstall: no launch or other uninstall of the storefront runs, and
+    /// no Transfer of its game.
     pub uninstall: GameOpening,
     /// A launch: a Transfer holds only its own game, and those whose launch
     /// would need one.
@@ -180,6 +180,8 @@ pub struct InstallationsState {
     /// Grows with every change.
     pub revision: u64,
     pub installations: Vec<Installation>,
+    /// The installations whose disk is not connected.
+    pub offline: Vec<Installation>,
     pub transfer: Option<GameTransfer>,
     /// The game the last Transfer progress belongs to.
     pub transfer_game: Option<String>,
@@ -325,6 +327,11 @@ fn state<S: Named>(state: installations::State<S>) -> InstallationsState {
             .receipts
             .into_iter()
             .map(|receipt| installation(receipt, &state.updates))
+            .collect(),
+        offline: state
+            .offline
+            .into_iter()
+            .map(|receipt| installation(receipt, &[]))
             .collect(),
         transfer: state.transfer.map(Into::into),
         transfer_game: name(state.transfer_game),
@@ -665,6 +672,12 @@ impl AccountInstallations {
 
     pub fn uninstall(&self, installation: String) {
         each!(self, installations => installations.uninstall(&installation))
+    }
+
+    /// Forgets the `installation` whose disk is not connected; its files
+    /// stay on that disk.
+    pub fn forget(&self, installation: String) {
+        each!(self, installations => installations.forget(&installation))
     }
 
     /// The launch settings of the Windows `installation`; `None` for a Mac

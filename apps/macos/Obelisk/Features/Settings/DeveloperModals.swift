@@ -334,6 +334,11 @@ final class DeveloperModals {
         }
     }
 
+    /// An installed game whose uninstall does nothing.
+    static var management: GameManagement {
+        GameManagement(directory: "/", offlineVolume: nil, canVerify: true, canRemove: true, verify: {}, remove: {})
+    }
+
     static var forceQuitAction: GameAction {
         GameAction(kind: .running(.forceQuit), title: L10n.string("model.game.forceQuit"), isAvailable: true,
                    launches: false)
@@ -357,8 +362,8 @@ private struct DeveloperModalsPresentation: ViewModifier {
     func body(content: Content) -> some View {
         content
             .sheet(item: $modals.sheet) { sheet in sheet.content { modals.sheet = nil } }
-            .uninstallConfirmation(DeveloperModals.gameName, isPresented: $modals.confirmsUninstall,
-                                   canUninstall: true) {}
+            .removalConfirmation(DeveloperModals.gameName, management: DeveloperModals.management,
+                                 isPresented: $modals.confirmsUninstall)
             .forceQuitConfirmation(DeveloperModals.gameName, for: DeveloperModals.forceQuitAction,
                                    asking: $modals.forceQuit)
     }
