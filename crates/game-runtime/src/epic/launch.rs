@@ -22,7 +22,11 @@ pub(crate) trait Services: Sized + Send + Sync + 'static {
     async fn launch_plan(&self, config: &Configuration) -> Result<LaunchPlan>;
     fn start_presence(&self, activity: Activity);
     fn stop_presence(&self);
-    async fn disconnect(&self);
+    /// Stops the launch's Epic connections but never revokes its session:
+    /// the game's own session came from it, and outlives the launch when the
+    /// game's program exits before the game does. Epic's launcher never
+    /// revokes the session it launches games from either.
+    fn release(&self);
     /// EGS Cloud for this game and Game session.
     async fn cloud(
         self: &Arc<Self>,
@@ -59,8 +63,8 @@ impl Services for epic_kit::client::Client {
     fn stop_presence(&self) {
         self.stop_friends();
     }
-    async fn disconnect(&self) {
-        let _ = epic_kit::client::Client::disconnect(self).await;
+    fn release(&self) {
+        self.shutdown_observers();
     }
     async fn cloud(
         self: &Arc<Self>,
@@ -206,7 +210,7 @@ impl<S: Services> lifecycle::Launch for Launch<S> {
 
     async fn close(&mut self) {
         if let Some(api) = &self.api {
-            api.disconnect().await;
+            api.release();
         }
     }
 

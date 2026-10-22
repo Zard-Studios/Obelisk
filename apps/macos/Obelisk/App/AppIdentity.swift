@@ -6,6 +6,17 @@ enum AppIdentity {
     static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
     static let storageIdentifier = "com.zagrios.obelisk"
 
+    /// Prefix of the Keychain items sessions are saved in. Debug builds are signed by another
+    /// team than releases, and macOS asks for the login password each time one team's build
+    /// reads an item the other created, so they keep their own items.
+    static var keychainService: String {
+        #if DEBUG
+        storageIdentifier + ".debug"
+        #else
+        storageIdentifier
+        #endif
+    }
+
     static var libraryDirectory: URL {
         // The override is for isolated development and integration tests.
         if let path = ProcessInfo.processInfo.environment["OBELISK_LIBRARY_DIRECTORY"], !path.isEmpty {

@@ -113,7 +113,8 @@ struct GameActions<Store: InstallationStorefront> {
     private let verifying: Bool
     private let uninstalling: Store.GameID?
     private let queued: Set<Store.GameID>
-    private let resumable: Store.GameID?
+    /// The games whose install resumes a Transfer that stopped.
+    private let resumable: Set<Store.GameID>
     private let isConnected: Bool
     private let isRecovering: Bool
     private let session: GameSessions<Store>.ActiveGame?
@@ -132,7 +133,8 @@ struct GameActions<Store: InstallationStorefront> {
         verifying = installations.isVerifyingBeforeLaunch
         uninstalling = installations.uninstallGame
         queued = Set(installations.queuedGames)
-        resumable = installations.resumableGame
+        resumable = Set(installations.incompleteReceipts.map(\.gameID))
+            .union([installations.resumableGame].compactMap { $0 })
         isConnected = installations.isConnected
         isRecovering = installations.sessions.isRecovering
         session = installations.accountSession
@@ -191,7 +193,7 @@ struct GameActions<Store: InstallationStorefront> {
         if queued.contains(game) { return .queued }
         if let session { return .waiting(session.ended ? .closing : .launch) }
         if receipt != nil { return update ? .download(.update) : .launch }
-        return .download(resumable == game && installations.canModify(game) ? .resume : .install)
+        return .download(resumable.contains(game) && installations.canModify(game) ? .resume : .install)
     }
 
     private func title(of kind: GameAction.Kind) -> String {

@@ -13,7 +13,7 @@ protocol InstallationStorefront: GameStorefront {
     static var otherGameOperation: String { get }
     /// Whether Obelisk syncs the storefront's Cloud saves.
     static var syncsCloud: Bool { get }
-    /// Names a Cloud question or banner; the game's name follows it.
+    /// Names a Cloud question; the game's name follows it.
     static var cloudTitle: String { get }
 }
 
@@ -129,6 +129,9 @@ struct InstallationsSnapshot<Store: InstallationStorefront>: Equatable {
     var queued: [Store.GameID] = []
     /// The installations whose disk is not connected.
     var offline: [InstallationReceipt<Store.GameID>] = []
+    /// The new installations whose Transfer has not succeeded yet. None is an
+    /// installed game.
+    var incomplete: [InstallationReceipt<Store.GameID>] = []
 }
 
 /// One account's installations of one storefront, in Rust. Each action
@@ -168,6 +171,8 @@ protocol InstallationsBackend<Store>: AnyObject {
     /// Forgets `receipt`'s installation, whose disk is not connected; its
     /// files stay on that disk.
     func forget(_ receipt: InstallationReceipt<Store.GameID>)
+    /// Deletes the files of `receipt`'s incomplete installation and forgets it.
+    func discard(_ receipt: InstallationReceipt<Store.GameID>)
     func signedOut()
     /// Syncs the game's Cloud saves: those of `installed`, or an uninstalled
     /// game's when nil.
@@ -217,6 +222,10 @@ final class GameInstallations<Store: InstallationStorefront> {
     /// The game whose Transfer stopped before its receipt: the player can
     /// resume it.
     private(set) var resumableGame: Store.GameID?
+    /// The new installations whose Transfer has not succeeded yet: their files
+    /// wait in their folder, even after Obelisk quits, until the player
+    /// resumes or deletes them.
+    private(set) var incompleteReceipts: [Receipt] = []
     /// The games whose Transfer waits in the download queue.
     private(set) var queuedGames: [Store.GameID] = []
     /// What Rust's Reservation lets start now.
@@ -318,6 +327,7 @@ final class GameInstallations<Store: InstallationStorefront> {
         transfer = nil
         transferGame = nil
         resumableGame = nil
+        incompleteReceipts = []
         queuedGames = []
         gate = .closed
         isDownloading = false
@@ -343,6 +353,7 @@ final class GameInstallations<Store: InstallationStorefront> {
         if launchGame != snapshot.launchGame { launchGame = snapshot.launchGame }
         if uninstallGame != snapshot.uninstallGame { uninstallGame = snapshot.uninstallGame }
         if resumableGame != snapshot.resumable { resumableGame = snapshot.resumable }
+        if incompleteReceipts != snapshot.incomplete { incompleteReceipts = snapshot.incomplete }
         if queuedGames != snapshot.queued { queuedGames = snapshot.queued }
         if gate != snapshot.gate { gate = snapshot.gate }
         if cloud.sync != snapshot.cloudSync { cloud.sync = snapshot.cloudSync }
@@ -434,6 +445,20 @@ final class GameInstallations<Store: InstallationStorefront> {
     /// installed build stays on screen whatever the storefront would install now.
     var selectedReceipt: Receipt? {
         selection().flatMap { receipt(for: $0.game, preferring: $0.platform) }
+    }
+
+    /// The incomplete installation of the game on screen while none of its
+    /// builds is installed.
+    var selectedIncompleteReceipt: Receipt? {
+        guard selectedReceipt == nil, let selection = selection() else { return nil }
+        return Receipt.preferred(among: incompleteReceipts.filter { $0.gameID == selection.game },
+                                 platform: selection.platform)
+    }
+
+    /// Whether the files of the game on screen's incomplete installation may
+    /// be deleted.
+    var canDiscardSelectedGame: Bool {
+        account != nil && selectedIncompleteReceipt.map { gate.uninstall.allows($0.gameID) } == true
     }
 
     /// Whether the game on screen's installation may be verified.
@@ -567,7 +592,8 @@ final class GameInstallations<Store: InstallationStorefront> {
     }
 
     /// What the menus of `selection`'s game offer: managing its installation,
-    /// else forgetting the one whose disk is not connected.
+    /// deleting the files of a download that stopped, else forgetting the
+    /// installation whose disk is not connected.
     func management(of selection: InstallationSelection<Store>) -> GameManagement? {
         let game = selection.game
         let canRemove = account != nil && gate.uninstall.allows(game)
@@ -583,15 +609,28 @@ final class GameInstallations<Store: InstallationStorefront> {
                     }
                 } : [])
         }
+        let stopped = incompleteReceipts.filter { $0.gameID == game }
+        if let incomplete = Receipt.preferred(among: stopped, platform: selection.platform) {
+            return GameManagement(
+                directory: incomplete.directory, offlineVolume: nil, canVerify: false, canRemove: canRemove,
+                verify: nil, remove: { [weak self] in self?.discard(incomplete) }, removal: .download)
+        }
         let away = Receipt.preferred(among: offline.filter { $0.gameID == game }, platform: selection.platform)
         guard let away else { return nil }
         return GameManagement(
             directory: away.directory, offlineVolume: GameManagement.volume(of: away.directory) ?? "",
-            canVerify: false, canRemove: canRemove, verify: {}, remove: { [weak self] in self?.forget(away) })
+            canVerify: false, canRemove: canRemove, verify: nil, remove: { [weak self] in self?.forget(away) })
     }
 
     /// What the menus of the game on screen offer.
     var selectedManagement: GameManagement? { selection().flatMap(management(of:)) }
+
+    /// Deletes the files of an incomplete installation, from its game's page.
+    func discard(_ receipt: Receipt) {
+        guard account != nil, gate.uninstall.allows(receipt.gameID), incompleteReceipts.contains(receipt)
+        else { return }
+        act { $0.discard(receipt) }
+    }
 
     // MARK: Launch settings
 
@@ -676,6 +715,7 @@ final class NoInstallations<Store: InstallationStorefront>: InstallationsBackend
     func join(_ receipt: InstallationReceipt<Store.GameID>, invite: SteamGameInvite) {}
     func uninstall(_ receipt: InstallationReceipt<Store.GameID>) {}
     func forget(_ receipt: InstallationReceipt<Store.GameID>) {}
+    func discard(_ receipt: InstallationReceipt<Store.GameID>) {}
     func signedOut() {}
     func maintainCloud(_ game: Store.GameID, installed: InstallationReceipt<Store.GameID>?) {}
     func answerCloud(_ game: Store.GameID, decisionId: UInt64, choice: CloudChoice) async throws {
@@ -721,6 +761,7 @@ final class RustInstallations<Store: InstallationStorefront>: InstallationsBacke
     }
     func uninstall(_ receipt: InstallationReceipt<Store.GameID>) { core.uninstall(installation: receipt.id) }
     func forget(_ receipt: InstallationReceipt<Store.GameID>) { core.forget(installation: receipt.id) }
+    func discard(_ receipt: InstallationReceipt<Store.GameID>) { core.discard(installation: receipt.id) }
     func signedOut() { core.signedOut() }
     func maintainCloud(_ game: Store.GameID, installed: InstallationReceipt<Store.GameID>?) {
         core.maintainCloud(game: Store.name(game), installation: installed?.id)
@@ -744,10 +785,22 @@ final class RustInstallations<Store: InstallationStorefront>: InstallationsBacke
         catch { throw GameSessions<Store>.translated(error) }
     }
 
+    private static func receipts(_ installations: [Installation]) -> [InstallationReceipt<Store.GameID>] {
+        installations.compactMap { installation in
+            Store.game(installation.game).map {
+                InstallationReceipt(id: installation.id, gameID: $0, name: installation.name,
+                                    directory: installation.directory, platform: installation.platform,
+                                    totalBytes: installation.totalBytes,
+                                    needsVerification: installation.needsVerification,
+                                    updateAvailable: installation.updateAvailable)
+            }
+        }
+    }
+
     private static func snapshot(_ state: InstallationsState) -> InstallationsSnapshot<Store> {
         InstallationsSnapshot(
             revision: state.revision,
-            receipts: state.installations.compactMap(receipt),
+            receipts: receipts(state.installations),
             transfer: state.transfer, transferGame: state.transferGame.flatMap(Store.game),
             downloading: state.downloading, launching: state.launching,
             verifyingBeforeLaunch: state.verifyingBeforeLaunch, launchGame: state.launchGame.flatMap(Store.game),
@@ -762,19 +815,11 @@ final class RustInstallations<Store: InstallationStorefront>: InstallationsBacke
                 }
             },
             queued: state.queued.compactMap(Store.game),
-            offline: state.offline.compactMap(receipt)
+            offline: receipts(state.offline),
+            incomplete: receipts(state.incomplete)
         )
     }
 
-    private static func receipt(_ installation: Installation) -> InstallationReceipt<Store.GameID>? {
-        Store.game(installation.game).map {
-            InstallationReceipt(id: installation.id, gameID: $0, name: installation.name,
-                                directory: installation.directory, platform: installation.platform,
-                                totalBytes: installation.totalBytes,
-                                needsVerification: installation.needsVerification,
-                                updateAvailable: installation.updateAvailable)
-        }
-    }
 }
 
 /// A folder that holds games an installation may move to.
@@ -808,10 +853,14 @@ struct GameManagement {
     let canVerify: Bool
     /// Whether the installation may be uninstalled, or forgotten.
     let canRemove: Bool
-    /// Verifies the installed game's files, repairing or updating them.
-    let verify: () -> Void
-    /// Uninstalls the installation, or forgets it.
+    /// Verifies the installed game's files, repairing or updating them; nil
+    /// for a download that stopped first.
+    let verify: (() -> Void)?
+    /// Uninstalls the installation, deletes the files of a download that
+    /// stopped, or forgets an installation whose disk is not connected.
     let remove: () -> Void
+    /// What `remove` deletes.
+    var removal = GameRemoval.uninstall
     /// The other folders that hold games it may move to.
     var moves: [GameMove] = []
 

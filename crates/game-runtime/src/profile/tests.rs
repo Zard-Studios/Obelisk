@@ -302,3 +302,13 @@ fn a_game_that_reads_its_language_from_its_command_line_gets_the_players() {
     assert_eq!(language_of(None, Some("C".into())), None);
     assert_eq!(language_of(None, None), None);
 }
+
+#[test]
+fn the_named_games_are_the_ones_the_table_names_by_a_storefront_s_id() {
+    let named: Vec<_> = named().collect();
+
+    assert!(named.contains(&Game::Steam { app_id: 1245620 }));
+    assert!(named.contains(&Game::Steam { app_id: 377160 }));
+    assert!(!named.contains(&Game::Steam { app_id: 252950 }));
+    assert!(named.contains(&ROCKET_LEAGUE));
+}

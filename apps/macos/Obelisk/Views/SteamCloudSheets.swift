@@ -1,5 +1,20 @@
 import SwiftUI
 
+/// The Cloud question a storefront's model asks over the whole window: which
+/// saves to keep, or what to do once a launch's check failed.
+struct CloudQuestionSheet<Model: LibraryStorefront>: View {
+    let model: Model
+
+    var body: some View {
+        let storefront = Model.Store.storefront.section.rawValue
+        switch model.cloud.question?.kind {
+        case .conflict: SteamCloudPromptView(model: model, storefront: storefront)
+        case .failed: SteamCloudFailureView(model: model, storefront: storefront)
+        case nil: EmptyView()
+        }
+    }
+}
+
 struct SteamCloudPromptView: View {
     let title: String
     let message: String
@@ -97,24 +112,52 @@ struct SteamCloudFailureView: View {
     var storefront = "steam"
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: "icloud.slash")
-                .font(.system(size: 12, weight: .semibold))
-            Text(L10n.message(message))
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-            HStack(spacing: 12) {
-                Button(L10n.string("ui.common.retry"), action: onRetry)
-                if canLaunchAnyway {
-                    Button(L10n.string("ui.cloud.launch_anyway"), action: onLaunchAnyway)
-                }
-                Button(L10n.string("ui.common.cancel"), action: onCancel)
+        VStack(alignment: .leading, spacing: 20) {
+            SheetHeader(title: title, subtitle: L10n.message(message), symbol: "icloud.slash",
+                        colors: TileColors.red)
+            if busy {
+                SheetNotice(kind: .progress, text: L10n.string("ui.cloud.working"))
             }
-            .obeliskButtonStyle(.borderless)
-            .controlSize(.small)
-            .disabled(busy)
+            HStack(spacing: 10) {
+                Spacer(minLength: 0)
+                // Cancel stays open while the sync works, as the conflict's
+                // does: the sheet holds the whole window.
+                GlassCapsuleButton(title: L10n.string("ui.common.cancel"), size: .large,
+                                   identifier: "\(storefront)-cloud-cancel", action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+                if canLaunchAnyway {
+                    GlassCapsuleButton(title: L10n.string("ui.cloud.launch_anyway"), size: .large,
+                                       identifier: "\(storefront)-cloud-launch-anyway", action: onLaunchAnyway)
+                        .disabled(busy)
+                }
+                AccentCapsuleButton(title: L10n.string("ui.common.retry"), size: .large,
+                                    identifier: "\(storefront)-cloud-retry", action: onRetry)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(busy)
+            }
         }
+        .padding(24)
+        .frame(width: 500)
+        .tint(ObeliskStyle.accent)
+        .animation(.easeInOut(duration: 0.2), value: busy)
+        .interactiveDismissDisabled()
         .accessibilityIdentifier("\(storefront)-cloud-failure")
+    }
+}
+
+extension SteamCloudPromptView {
+    /// The Cloud conflict a storefront's model presents, answered through it.
+    init<Model: LibraryStorefront>(model: Model, storefront: String) {
+        let cloud = model.cloud
+        self.init(
+            title: model.cloudTitle(for: cloud.promptGame),
+            message: cloud.promptMessage,
+            busy: cloud.promptWorking,
+            onCancel: { cloud.respond(.cancel) },
+            onChooseLocal: { cloud.respond(.local) },
+            onChooseCloud: { cloud.respond(.cloud) },
+            storefront: storefront
+        )
     }
 }
 

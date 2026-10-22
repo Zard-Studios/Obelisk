@@ -65,6 +65,34 @@ final class GameManagementButtonTests: XCTestCase {
     }
 
     @MainActor
+    func testTheLaunchRowShowsTheGameSNote() async throws {
+        let metrics = GameMetrics(isInstalled: true, size: "33,4 Go", lastPlayed: nil, playtime: nil,
+                                  achievements: GameAchievementsModel(storeID: "steam", describe: SteamModel.message))
+        func row(_ note: String?) -> some View {
+            GameLaunchRow(metrics: metrics, note: note) {
+                GameActionButton(
+                    action: GameAction(kind: .launch, title: L10n.string("model.game.launch"), isAvailable: true,
+                                       launches: true),
+                    gameName: "Team Fortress 2"
+                )
+            }
+            .padding(18)
+            .frame(width: 760)
+            .environment(\.colorScheme, .dark)
+            .background(ObeliskPalette(colorScheme: .dark).background)
+        }
+        let plain = ManagementButtonWindow(row(nil))
+        defer { plain.close() }
+        await plain.prepare()
+        let noted = ManagementButtonWindow(row("Plays offline and on LAN servers that allow insecure players."))
+        defer { noted.close() }
+        await noted.prepare()
+
+        // The note adds its caption and a line under the metrics.
+        XCTAssertGreaterThan(noted.host.fittingSize.height, plain.host.fittingSize.height + 20)
+    }
+
+    @MainActor
     private func attribute(_ name: String, of element: NSObject) -> Any? {
         element.responds(to: NSSelectorFromString(name)) ? element.value(forKey: name) : nil
     }

@@ -1,6 +1,25 @@
 import AppKit
 import SwiftUI
 
+/// What a game's management menu deletes: its installation, or the files of
+/// a download that stopped before it was installed.
+enum GameRemoval {
+    case uninstall, download
+
+    /// The menu item and the confirmation's button.
+    var action: String {
+        L10n.string(self == .uninstall ? "ui.game.uninstall" : "ui.game.delete_download")
+    }
+
+    func confirmation(_ gameName: String) -> String {
+        L10n.string(self == .uninstall ? "ui.game.uninstall_title" : "ui.game.delete_download_title", gameName)
+    }
+
+    var message: String {
+        L10n.string(self == .uninstall ? "ui.game.uninstall_message" : "ui.game.delete_download_message")
+    }
+}
+
 struct GameManagementButton: View {
     let gameName: String
     let management: GameManagement
@@ -55,8 +74,10 @@ struct GameManagementItems: View {
             Button(L10n.string("ui.game.show_files"), systemImage: "folder") {
                 NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: management.directory)
             }
-            Button(L10n.string("ui.game.verify_files"), systemImage: "checkmark.shield", action: management.verify)
-                .disabled(!management.canVerify)
+            if let verify = management.verify {
+                Button(L10n.string("ui.game.verify_files"), systemImage: "checkmark.shield", action: verify)
+                    .disabled(!management.canVerify)
+            }
             if !management.moves.isEmpty {
                 Menu(L10n.string("ui.game.move_to"), systemImage: "externaldrive") {
                     ForEach(management.moves) { move in
@@ -66,7 +87,7 @@ struct GameManagementItems: View {
                 }
             }
             Divider()
-            Button(L10n.string("ui.game.uninstall"), systemImage: "trash", role: .destructive) {
+            Button(management.removal.action, systemImage: "trash", role: .destructive) {
                 confirmsRemoval = true
             }
             .disabled(!management.canRemove)
@@ -80,29 +101,57 @@ extension View {
     func removalConfirmation(_ gameName: String, management: GameManagement?,
                              isPresented: Binding<Bool>) -> some View {
         let offline = management?.offlineVolume
-        return alert(L10n.string(offline == nil ? "ui.game.uninstall_title" : "ui.game.forget_title", gameName),
+        let removal = management?.removal ?? .uninstall
+        return alert(offline == nil ? removal.confirmation(gameName) : L10n.string("ui.game.forget_title", gameName),
                      isPresented: isPresented) {
             Button(L10n.string("ui.common.cancel"), role: .cancel) {}
-            Button(L10n.string(offline == nil ? "ui.game.uninstall" : "ui.game.forget"), role: .destructive) {
+            Button(offline == nil ? removal.action : L10n.string("ui.game.forget"), role: .destructive) {
                 management?.remove()
             }
             .disabled(management?.canRemove != true)
         } message: {
-            Text(offline.map { L10n.string("ui.game.forget_message", $0) } ?? L10n.string("ui.game.uninstall_message"))
+            Text(offline.map { L10n.string("ui.game.forget_message", $0) } ?? removal.message)
         }
     }
 }
 
-/// A game page's launch row: its launch and management buttons, then its metrics.
+/// A game page's launch row: its launch and management buttons, then its
+/// metrics, then Obelisk's note on the game, when it has one.
 struct GameLaunchRow<Buttons: View>: View {
     let metrics: GameMetrics
+    var note: String?
     @ViewBuilder let buttons: Buttons
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) { buttons }
             GameMetricsRow(metrics: metrics)
+            if let note {
+                GameNote(text: note)
+            }
         }
+    }
+}
+
+/// What Obelisk tells players about a game, such as what works of it and
+/// what does not yet: a metric's caption over a few lines.
+struct GameNote: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            GameMetricSymbol(name: "info.circle")
+            VStack(alignment: .leading, spacing: 4) {
+                GameMetricCaption(text: L10n.string("ui.game.note"))
+                Text(text)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: 560, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("game-note")
     }
 }
 
@@ -215,6 +264,19 @@ struct GameExpectedFPSButton: View {
     }
 }
 
+/// The uppercase caption over a game page metric, and over the game's note.
+private struct GameMetricCaption: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10, weight: .semibold))
+            .tracking(0.4)
+            .textCase(.uppercase)
+            .foregroundStyle(.secondary)
+    }
+}
+
 /// A game page metric: an uppercase caption over its value, after an optional
 /// large symbol. A metric that is a control highlights under the pointer.
 struct GameMetricLabel<Icon: View, Value: View>: View {
@@ -235,11 +297,7 @@ struct GameMetricLabel<Icon: View, Value: View>: View {
         HStack(spacing: 9) {
             icon
             VStack(alignment: .leading, spacing: 4) {
-                Text(caption)
-                    .font(.system(size: 10, weight: .semibold))
-                    .tracking(0.4)
-                    .textCase(.uppercase)
-                    .foregroundStyle(.secondary)
+                GameMetricCaption(text: caption)
                 value
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.primary)

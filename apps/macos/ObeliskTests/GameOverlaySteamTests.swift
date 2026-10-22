@@ -57,6 +57,11 @@ final class GameOverlaySteamTests: XCTestCase {
         XCTAssertEqual(page(.remotePlayTogether), .friends)
     }
 
+    func testTheStoreSearchKeepsAPlusApartFromASpace() {
+        XCTAssertEqual(GameOverlayController.storeSearchURL("C++ Tycoon").absoluteString,
+                       "https://store.steampowered.com/search/?term=C%2B%2B%20Tycoon")
+    }
+
     @MainActor
     func testTheGamesOverlayRequestsOpenTheirPageOncePerNewRequest() async throws {
         let (fixture, model, sessions) = try await signedIn()

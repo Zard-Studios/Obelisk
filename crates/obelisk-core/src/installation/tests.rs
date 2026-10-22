@@ -495,6 +495,20 @@ fn removal_waits_for_the_installation_lock() {
 }
 
 #[test]
+fn an_unfinished_removal_keeps_an_installation_and_finds_no_folder_to_remove() {
+    let parent = tempfile::tempdir().unwrap();
+    let game = installed(parent.path(), "steam-620-macos");
+    write_receipt(&game.canonicalize().unwrap(), &Receipt { build: 1 }).unwrap();
+    assert!(!remove_unfinished(&game, "steam-620-macos", &[]).unwrap());
+    assert!(game.join("game.bin").exists());
+
+    fs::remove_file(game.join(RECEIPT_FILE)).unwrap();
+    assert!(remove_unfinished(&game, "steam-620-macos", &[]).unwrap());
+    assert!(!game.exists());
+    assert!(!remove_unfinished(&game, "steam-620-macos", &[]).unwrap());
+}
+
+#[test]
 fn removal_accepts_both_spellings_of_the_system_temporary_folder() {
     let component = format!("ObeliskRemovalAliases-{}", std::process::id());
     let temporary = std::env::temp_dir();

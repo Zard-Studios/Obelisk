@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "games": [
+    {
+      "name": "Team Fortress 2",
+      "steam": 440,
+      "text": {
+        "en": "Plays offline and on LAN or community servers that allow insecure players. Secure (VAC) servers, Casual matchmaking included, refuse it: Steam on a Mac can't confirm the signatures of its Windows files.",
+        "fr": "Se joue hors ligne et sur les serveurs LAN ou communautaires qui acceptent les joueurs non sécurisés. Les serveurs sécurisés (VAC), matchmaking Casual compris, le refusent : Steam sur Mac ne peut pas confirmer les signatures de ses fichiers Windows."
+      }
+    }
+  ]
+}

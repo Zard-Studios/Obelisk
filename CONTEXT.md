@@ -109,3 +109,7 @@ _Avoid_: sign-out cancel, logout kill
 **Game action**:
 What the player can do with one game of an account now, as its button shows it: download, resume or update it, launch it, wait for its queued Transfer, follow its Transfer, wait while it is uninstalled, launched or its session closes, follow a step outside any Transfer (a runtime its launch waits for, or a Cloud sync), or end its running game. A game's page and its library show the same action, except for an installed game whose storefront offers a newer build: the page offers the update alone, while the library launches it and the launch installs the update first. A Game session of another account is not this account's running game.
 _Avoid_: primary action, card action
+
+**Game note**:
+What Obelisk tells players about one game on its page, whatever its storefront or build, such as what works of it and what does not yet: a few sentences in Obelisk's language, else in English. Obelisk writes it, not the storefront, and it changes nothing about how the game runs, which its profile decides.
+_Avoid_: compatibility note, warning, badge

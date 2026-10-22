@@ -14,6 +14,9 @@ struct StorefrontBrowser<Model: LibraryStorefront, HeroArtwork: View, HeroLogo: 
     let avatarURL: URL?
     /// How the storefront's store opens, signed in as the account.
     let storePage: (@MainActor () async -> WebPageStart)?
+    /// How its store's search opens, which the library offers when its own
+    /// search finds nothing.
+    let storeSearch: (@MainActor (String) async -> WebPageStart)?
     let scrollMemory: LibraryScrollMemory
     @ViewBuilder let heroArtwork: (Model.Game) -> HeroArtwork
     @ViewBuilder let heroLogo: (Model.Game) -> HeroLogo
@@ -35,6 +38,7 @@ struct StorefrontBrowser<Model: LibraryStorefront, HeroArtwork: View, HeroLogo: 
         accountName: String?,
         avatarURL: URL? = nil,
         storePage: (@MainActor () async -> WebPageStart)? = nil,
+        storeSearch: (@MainActor (String) async -> WebPageStart)? = nil,
         scrollMemory: LibraryScrollMemory,
         @ViewBuilder heroArtwork: @escaping (Model.Game) -> HeroArtwork,
         @ViewBuilder heroLogo: @escaping (Model.Game) -> HeroLogo,
@@ -49,6 +53,7 @@ struct StorefrontBrowser<Model: LibraryStorefront, HeroArtwork: View, HeroLogo: 
         self.accountName = accountName
         self.avatarURL = avatarURL
         self.storePage = storePage
+        self.storeSearch = storeSearch
         self.scrollMemory = scrollMemory
         self.heroArtwork = heroArtwork
         self.heroLogo = heroLogo
@@ -60,7 +65,7 @@ struct StorefrontBrowser<Model: LibraryStorefront, HeroArtwork: View, HeroLogo: 
     var body: some View {
         ZStack {
             if let game = model.selectedGame {
-                gamePage(game, GamePageContext(storeID: storeID, heroArtwork: heroArtwork(game), cover: artwork(game)))
+                gamePage(game, GamePageContext(heroArtwork: heroArtwork(game), cover: artwork(game)))
                     .id(game.id)
                     // Above the library it replaces, which falls back beneath it.
                     .zIndex(1)
@@ -70,10 +75,10 @@ struct StorefrontBrowser<Model: LibraryStorefront, HeroArtwork: View, HeroLogo: 
             } else {
                 StorefrontLibraryPage(
                     model: model,
-                    storeID: storeID,
                     storeTitle: storeTitle,
                     libraryTitle: libraryTitle,
                     scrollMemory: scrollMemory,
+                    stores: storeSearch.map { [StoreSearch(storeID: storeID, storeTitle: storeTitle, page: $0)] } ?? [],
                     open: open,
                     heroArtwork: heroArtwork,
                     heroLogo: heroLogo,
@@ -201,8 +206,6 @@ enum GameOpeningSource {
 /// What a storefront's browser hands the page of the game it opened. The
 /// artwork is the library's own, so the cover flies between the same image.
 struct GamePageContext<HeroArtwork: View, Cover: View> {
-    /// Names the storefront in accessibility identifiers.
-    let storeID: String
     let heroArtwork: HeroArtwork
     let cover: Cover
 }

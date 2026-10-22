@@ -462,6 +462,15 @@ final class GameOverlayController {
         URL(string: appId == 0 ? "https://store.steampowered.com/" : "https://store.steampowered.com/app/\(appId)")!
     }
 
+    /// Steam's store search for `query`.
+    nonisolated static func storeSearchURL(_ query: String) -> URL {
+        var url = URLComponents(string: "https://store.steampowered.com/search/")!
+        url.queryItems = [URLQueryItem(name: "term", value: query)]
+        // A `+` left as is reads as a space.
+        url.percentEncodedQuery = url.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        return url.url!
+    }
+
     nonisolated static func profileURL(steamId: UInt64) -> URL {
         URL(string: "https://steamcommunity.com/profiles/\(steamId)")!
     }

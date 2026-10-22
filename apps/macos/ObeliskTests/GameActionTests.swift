@@ -229,6 +229,23 @@ final class GameActionTests: XCTestCase {
         try await eventually { installations.selectedManagement?.moves.isEmpty == true }
     }
 
+    func testADownloadThatStoppedCanOnlyHaveItsFilesDeleted() async throws {
+        let fixture = InstallationsFixture(installed: false)
+        let installations = fixture.connect()
+        let stopped = InstallationReceipt.steam(appId: 620, name: "Portal 2",
+                                                directory: "/fixture/Games/Steam/steam-620-macos", platform: .mac)
+        fixture.backend.publish { $0.incomplete = [stopped] }
+        try await eventually { installations.incompleteReceipts == [stopped] }
+
+        let management = try XCTUnwrap(installations.selectedManagement)
+        XCTAssertEqual(management.removal, .download)
+        XCTAssertNil(management.verify)
+        XCTAssertTrue(management.moves.isEmpty)
+        XCTAssertFalse(management.isOffline)
+        management.remove()
+        XCTAssertEqual(fixture.backend.actions, [.discard(stopped)])
+    }
+
     func testAnInstallationOnADisconnectedDiskCanOnlyBeForgotten() async throws {
         let fixture = InstallationsFixture(installed: false)
         let installations = fixture.connect()
@@ -242,7 +259,7 @@ final class GameActionTests: XCTestCase {
         let management = try XCTUnwrap(installations.selectedManagement)
         XCTAssertEqual(management.offlineVolume, "Games SSD")
         XCTAssertFalse(management.canVerify)
-        management.verify()
+        XCTAssertNil(management.verify, "Its files are not there to verify")
         management.remove()
         XCTAssertEqual(fixture.backend.actions, [.forget(away)])
 

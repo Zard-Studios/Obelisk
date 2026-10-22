@@ -101,20 +101,47 @@ struct StorefrontWarningBanner: View {
     }
 }
 
+/// A store whose search the library offers when no game it holds matches,
+/// for a game the player does not own yet.
+struct StoreSearch: Identifiable {
+    let storeID: String
+    let storeTitle: String
+    /// The store's search for a query, signed in as the account.
+    let page: @MainActor (String) async -> WebPageStart
+
+    var id: String { storeID }
+}
+
 /// Shown when the library is empty or no game matches its search and filter.
+/// A search that finds nothing offers `stores`' own searches: the library's
+/// looks only through the games the player owns.
 struct StorefrontEmptyLibrary: View {
     @Binding var searchText: String
     @Binding var filter: StorefrontLibraryFilter
+    let stores: [StoreSearch]
     let refresh: () -> Void
+    @Environment(\.presentStore) private var presentStore
 
-    init(searchText: Binding<String>, filter: Binding<StorefrontLibraryFilter> = .constant(.all), refresh: @escaping () -> Void) {
+    init(searchText: Binding<String>, filter: Binding<StorefrontLibraryFilter> = .constant(.all),
+         stores: [StoreSearch], refresh: @escaping () -> Void) {
         self._searchText = searchText
         self._filter = filter
+        self.stores = stores
         self.refresh = refresh
     }
 
+    private var query: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private var hasCriteria: Bool {
-        filter != .all || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        filter != .all || !query.isEmpty
+    }
+
+    /// The stores to search, once a search of the whole library found
+    /// nothing: under a filter, the game may be owned.
+    private var searchedStores: [StoreSearch] {
+        query.isEmpty || filter != .all || presentStore == nil ? [] : stores
     }
 
     var body: some View {
@@ -123,6 +150,19 @@ struct StorefrontEmptyLibrary: View {
                 .font(.system(size: 36, weight: .light)).foregroundStyle(.secondary)
             Text(L10n.string(hasCriteria ? "ui.library.no_games_found" : "ui.library.empty"))
                 .font(.system(size: 20, weight: .semibold))
+            if !searchedStores.isEmpty {
+                Text(L10n.string("ui.search.owned_only"))
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                HStack(spacing: 10) {
+                    ForEach(searchedStores) { store in
+                        Button(L10n.string("ui.search.store", store.storeTitle)) { search(store) }
+                            .obeliskButtonStyle(.borderedProminent)
+                            .accessibilityIdentifier("search-store-\(store.storeID)")
+                    }
+                }
+            }
             Button(L10n.string(filter != .all ? "ui.filter.show_all" : hasCriteria ? "ui.search.clear" : "ui.common.refresh")) {
                 if hasCriteria {
                     searchText = ""
@@ -134,6 +174,14 @@ struct StorefrontEmptyLibrary: View {
             .obeliskButtonStyle(.bordered)
         }
         .frame(maxWidth: .infinity, minHeight: 260)
+    }
+
+    /// Opens `store`'s search for the query over the whole window.
+    private func search(_ store: StoreSearch) {
+        let query = query
+        presentStore?(StorePresentation(storeID: store.storeID, storeTitle: store.storeTitle) {
+            await store.page(query)
+        })
     }
 }
 

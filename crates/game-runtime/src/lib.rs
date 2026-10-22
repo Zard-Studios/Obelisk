@@ -12,6 +12,7 @@ pub mod launch_settings;
 mod locations;
 pub mod metal_hud;
 mod native;
+pub mod notes;
 pub mod package;
 pub mod prefixes;
 mod process;

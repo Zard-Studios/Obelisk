@@ -178,7 +178,7 @@ pub(crate) trait Launch: Sized + 'static {
         None
     }
     fn stopped(&self, host: &Self::Host, exit: Option<i32>);
-    /// Ends the launch's own network session, whatever the outcome.
+    /// Ends the launch's own network connections, whatever the outcome.
     async fn close(&mut self) {}
     /// Storefront facts of a terminal record.
     fn terminal(_record: &mut Record<Self::P>) {}

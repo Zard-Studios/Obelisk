@@ -40,6 +40,8 @@ struct HomeLibrary {
     let recent: [HomeGame]
     /// Its installed games, the last played first.
     let installed: [HomeGame]
+    /// Its Obelisk Verified games, the last played first: as many as a shelf holds.
+    let verified: [HomeGame]
     /// The first games of its last played order, as its tile shows them.
     let covers: [HomeGame]
     let count: Int
@@ -58,12 +60,15 @@ extension HomeGame {
 
 extension HomeLibrary {
     /// `library` as Home shows it; `home` makes each game Home lists.
-    init<Store, Game>(_ library: AccountLibrary<Store, Game>, home: (Game) -> HomeGame) {
+    init<Store, Game>(_ library: AccountLibrary<Store, Game>,
+                      verified: Set<Store.GameID> = ObeliskVerified.games(of: Store.self),
+                      home: (Game) -> HomeGame) {
         let order = library.games(by: .lastPlayed)
         self.init(
             featured: library.featured.map(home),
             recent: order.prefix { library.lastPlayed(of: $0) != nil }.prefix(HomeShelves.shelfLimit + 1).map(home),
             installed: library.games(by: .lastPlayed, filter: .installed).map(home),
+            verified: order.lazy.filter { verified.contains($0.id) }.prefix(HomeShelves.shelfLimit).map(home),
             covers: order.prefix(3).map(home),
             count: library.games.count
         )
@@ -128,6 +133,8 @@ struct HomeShelves {
     let recent: [HomeGame]
     /// Every game on the Mac, the last played first.
     let installed: [HomeGame]
+    /// The games Obelisk was set up to run, the last played first.
+    let verified: [HomeGame]
 
     static let shelfLimit = 20
 
@@ -140,10 +147,21 @@ struct HomeShelves {
         let recent = Self.lastPlayedFirst(libraries.map(\.recent))
         self.recent = Array(recent.filter { $0.id != hero?.id }.prefix(Self.shelfLimit))
         installed = Self.lastPlayedFirst(libraries.map(\.installed))
+        verified = Array(Self.lastPlayedFirst(libraries.map(\.verified)).prefix(Self.shelfLimit))
     }
 
     /// Merges each library's games, each in its last played order.
     private static func lastPlayedFirst(_ games: [[HomeGame]]) -> [HomeGame] {
         LibraryOrder.merge(games, title: \.title, rank: { $0.lastPlayed?.timeIntervalSince1970 })
+    }
+}
+
+/// The games Obelisk was set up to run, as its profile table names them by
+/// their storefronts' ids: Home's Obelisk Verified shelf. Read as launches
+/// read the table, so a table a launch read again shows on the next pass.
+enum ObeliskVerified {
+    /// `Store`'s games of the table.
+    static func games<Store: InstallationStorefront>(of store: Store.Type) -> Set<Store.GameID> {
+        Set(verifiedGames(storefront: Store.storefront).compactMap(Store.game))
     }
 }

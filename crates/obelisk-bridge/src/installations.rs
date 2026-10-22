@@ -196,6 +196,9 @@ pub struct InstallationsState {
     /// The game whose Transfer stopped before its receipt: the player can
     /// resume it.
     pub resumable: Option<String>,
+    /// The new installations whose Transfer has not succeeded yet: the player
+    /// resumes or discards each. None is an installed game.
+    pub incomplete: Vec<Installation>,
     pub report: Option<InstallationReport>,
     pub warning: Option<InstallationWarning>,
     pub gate: InstallationGate,
@@ -353,6 +356,11 @@ fn state<S: Named>(state: installations::State<S>) -> InstallationsState {
                 .as_ref()
                 .map(installations::Transfer::game),
         ),
+        incomplete: state
+            .incomplete
+            .into_iter()
+            .map(|receipt| installation(receipt, &[]))
+            .collect(),
         report: state.report.map(Into::into),
         warning: state
             .warning
@@ -704,6 +712,11 @@ impl AccountInstallations {
     /// stay on that disk.
     pub fn forget(&self, installation: String) {
         each!(self, installations => installations.forget(&installation))
+    }
+
+    /// Deletes the files of the incomplete `installation` and forgets it.
+    pub fn discard(&self, installation: String) {
+        each!(self, installations => installations.discard(&installation))
     }
 
     /// The launch settings of the Windows `installation`; `None` for a Mac
