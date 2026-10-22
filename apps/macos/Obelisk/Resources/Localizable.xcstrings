@@ -13438,6 +13438,12 @@
             "state": "translated",
             "value": "Nouveau moteur Voile disponible"
           }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nuovo motore Voile disponibile"
+          }
         }
       }
     },
@@ -13454,6 +13460,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Voile %@ peut être installé avant le lancement de votre jeu."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voile %@ può essere installato prima dell'avvio del tuo gioco."
           }
         }
       }
@@ -13472,6 +13484,12 @@
             "state": "translated",
             "value": "Ce jeu a besoin de Voile %@ pour démarrer."
           }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Questo gioco ha bisogno di Voile %@ per avviarsi."
+          }
         }
       }
     },
@@ -13489,6 +13507,12 @@
             "state": "translated",
             "value": "Changements"
           }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Novità"
+          }
         }
       }
     },
@@ -13502,6 +13526,12 @@
           }
         },
         "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voile %@"
+          }
+        },
+        "it": {
           "stringUnit": {
             "state": "translated",
             "value": "Voile %@"
@@ -13523,6 +13553,12 @@
             "state": "translated",
             "value": "Cette version n’a pas de notes."
           }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Questa versione non ha note."
+          }
         }
       }
     },
@@ -13540,6 +13576,12 @@
             "state": "translated",
             "value": "Mettre à jour"
           }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aggiorna"
+          }
         }
       }
     },
@@ -13556,6 +13598,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Passer"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Salta"
           }
         }
       }
