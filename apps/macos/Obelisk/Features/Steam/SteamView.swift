@@ -25,6 +25,7 @@ struct SteamView: View {
             accountName: model.displayName,
             avatarURL: model.avatarURL,
             storePage: model.storePage,
+            storeSearch: model.storeSearch,
             scrollMemory: libraryScroll,
             heroArtwork: Self.heroArtwork,
             heroLogo: Self.heroLogo,

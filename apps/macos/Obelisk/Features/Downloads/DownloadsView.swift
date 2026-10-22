@@ -310,10 +310,15 @@ private struct DownloadSpeedCard: View {
                     Text(L10n.string("ui.downloads.speed_title"))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
+                    // A fast speed beside a large Downloaded size would wrap its unit
+                    // under its figure: it shrinks instead.
                     Text(headline)
                         .font(.system(size: 34, weight: .bold, design: .rounded))
                         .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                 }
+                .layoutPriority(1)
                 Spacer()
                 DownloadStat(title: L10n.string("ui.downloads.peak"),
                              value: downloads.samples.count > 1 ? DownloadFormatting.speed(downloads.peakSpeed) : "—")
@@ -413,6 +418,7 @@ private struct DownloadStat: View {
                 .font(.system(size: 13, weight: .semibold))
                 .monospacedDigit()
         }
+        .fixedSize()
     }
 }
 

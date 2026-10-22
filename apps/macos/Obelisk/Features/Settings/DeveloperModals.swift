@@ -48,6 +48,28 @@ struct DeveloperModal: Identifiable {
                     },
                 ]),
             DeveloperModal(
+                id: "cloud-failure", title: "Cloud failure",
+                detail: "Over the whole window, when a launch's Cloud check fails before the game starts.",
+                symbol: "icloud.slash",
+                variants: [
+                    Variant("Steam") {
+                        $0.cloudFailure(storefront: "steam", title: SteamGames.cloudTitle,
+                                        message: "backend.steam.cloud.unsupported")
+                    },
+                    Variant("Epic Games") {
+                        $0.cloudFailure(storefront: "epic", title: EpicGames.cloudTitle,
+                                        message: "backend.epic.cloud.failed")
+                    },
+                    Variant("No Launch anyway") {
+                        $0.cloudFailure(storefront: "steam", title: SteamGames.cloudTitle,
+                                        message: "backend.steam.cloud.network", canLaunchAnyway: false)
+                    },
+                    Variant("Working") {
+                        $0.cloudFailure(storefront: "steam", title: SteamGames.cloudTitle,
+                                        message: "backend.steam.cloud.network", busy: true)
+                    },
+                ]),
+            DeveloperModal(
                 id: "rosetta", title: "Rosetta",
                 detail: "Over the whole window, when a Windows game needs Rosetta. Install fails after 3 seconds.",
                 symbol: "cpu",
@@ -132,9 +154,13 @@ struct DeveloperModal: Identifiable {
                 ]),
             DeveloperModal(
                 id: "uninstall", title: "Uninstall",
-                detail: "Alert, from a game's management menu. Uninstalls nothing here.",
+                detail: "Alert, from a game's management menu: an installation's, or a stopped download's. "
+                    + "Deletes nothing here.",
                 symbol: "trash.fill",
-                variants: [Variant("Open") { $0.confirmsUninstall = true }]),
+                variants: [
+                    Variant("Open") { $0.confirmsRemoval = .uninstall },
+                    Variant("Delete download") { $0.confirmsRemoval = .download },
+                ]),
             DeveloperModal(
                 id: "force-quit", title: "Force Quit",
                 detail: "Alert, from a running game's button once its quit did not end it. Quits nothing here.",
@@ -165,7 +191,7 @@ struct DeveloperModal: Identifiable {
 @MainActor @Observable
 final class DeveloperModals {
     var sheet: Sheet?
-    var confirmsUninstall = false
+    var confirmsRemoval: GameRemoval?
     var forceQuit: GameAction?
 
     /// A sheet and the models it shows, kept while it is open.
@@ -186,6 +212,15 @@ final class DeveloperModals {
             SteamCloudPromptView(title: "\(title) · \(Self.gameName)", message: message, busy: busy,
                                  onCancel: close, onChooseLocal: close, onChooseCloud: close, storefront: storefront)
                 .interactiveDismissDisabled()
+        }
+    }
+
+    func cloudFailure(storefront: String, title: String, message: String, busy: Bool = false,
+                      canLaunchAnyway: Bool = true) {
+        present { close in
+            SteamCloudFailureView(title: "\(title) · \(Self.gameName)", message: message, busy: busy,
+                                  canLaunchAnyway: canLaunchAnyway, onRetry: close, onCancel: close,
+                                  onLaunchAnyway: close, storefront: storefront)
         }
     }
 
@@ -334,9 +369,11 @@ final class DeveloperModals {
         }
     }
 
-    /// An installed game whose uninstall does nothing.
-    static var management: GameManagement {
-        GameManagement(directory: "/", offlineVolume: nil, canVerify: true, canRemove: true, verify: {}, remove: {})
+    /// A game whose removal, an uninstall or a stopped download's deletion,
+    /// does nothing.
+    static func management(removing removal: GameRemoval) -> GameManagement {
+        GameManagement(directory: "/", offlineVolume: nil, canVerify: removal == .uninstall,
+                       canRemove: true, verify: removal == .uninstall ? {} : nil, remove: {}, removal: removal)
     }
 
     static var forceQuitAction: GameAction {
@@ -362,8 +399,10 @@ private struct DeveloperModalsPresentation: ViewModifier {
     func body(content: Content) -> some View {
         content
             .sheet(item: $modals.sheet) { sheet in sheet.content { modals.sheet = nil } }
-            .removalConfirmation(DeveloperModals.gameName, management: DeveloperModals.management,
-                                 isPresented: $modals.confirmsUninstall)
+            .removalConfirmation(DeveloperModals.gameName,
+                                 management: DeveloperModals.management(removing: modals.confirmsRemoval ?? .uninstall),
+                                 isPresented: Binding(get: { modals.confirmsRemoval != nil },
+                                                      set: { if !$0 { modals.confirmsRemoval = nil } }))
             .forceQuitConfirmation(DeveloperModals.gameName, for: DeveloperModals.forceQuitAction,
                                    asking: $modals.forceQuit)
     }

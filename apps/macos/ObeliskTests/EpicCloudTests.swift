@@ -184,7 +184,7 @@ final class EpicCloudTests: XCTestCase {
             $0.gate = .open
         }
         try await eventually { !model.cloud.isMaintaining }
-        XCTAssertFalse(model.cloud.failurePresented, "Only a launch check shows a banner")
+        XCTAssertFalse(model.cloud.failurePresented, "Only a launch check asks after a failure")
         try await eventually { model.cloud.indicator(for: "sandbox:game") != nil }
 
         model.syncCloud()

@@ -49,6 +49,25 @@ pub enum Game<'a> {
     },
 }
 
+impl Game<'_> {
+    /// Whether a table entry with these storefronts' ids names this game.
+    pub(crate) fn named_by(
+        self,
+        steam: Option<u32>,
+        epic: Option<&EpicGame>,
+        gog: Option<&str>,
+    ) -> bool {
+        match self {
+            Game::Steam { app_id } => steam == Some(app_id),
+            Game::Epic {
+                namespace,
+                app_name,
+            } => epic.is_some_and(|epic| epic.namespace == namespace && epic.app_name == app_name),
+            Game::Gog { product_id } => gog == Some(product_id),
+        }
+    }
+}
+
 /// How Obelisk runs one Windows game.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Profile {
@@ -124,9 +143,10 @@ struct Known {
     minimum_voile: Option<String>,
 }
 
+/// An Epic game as a table names it: its namespace and app name.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EpicGame {
+pub(crate) struct EpicGame {
     namespace: String,
     app_name: String,
 }
@@ -224,17 +244,7 @@ impl Known {
 
     /// Whether this entry names `game` by its storefront's id.
     fn names(&self, game: Game<'_>) -> bool {
-        match game {
-            Game::Steam { app_id } => self.steam == Some(app_id),
-            Game::Epic {
-                namespace,
-                app_name,
-            } => self
-                .epic
-                .as_ref()
-                .is_some_and(|epic| epic.namespace == namespace && epic.app_name == app_name),
-            Game::Gog { product_id } => self.gog.as_deref() == Some(product_id),
-        }
+        game.named_by(self.steam, self.epic.as_ref(), self.gog.as_deref())
     }
 
     fn profile(&'static self) -> Profile {
@@ -321,6 +331,23 @@ fn language_arguments_in(game: Game<'_>, chosen: &[String], language: Option<&st
             Some(format!("{}{value}", speaks.flag))
         })
         .collect()
+}
+
+/// Every game the table launches read now names by a storefront's id, as
+/// its storefront names it.
+pub fn named() -> impl Iterator<Item = Game<'static>> {
+    table().iter().flat_map(|known| {
+        let steam = known.steam.map(|app_id| Game::Steam { app_id });
+        let epic = known.epic.as_ref().map(|epic| Game::Epic {
+            namespace: &epic.namespace,
+            app_name: &epic.app_name,
+        });
+        let gog = known
+            .gog
+            .as_deref()
+            .map(|product_id| Game::Gog { product_id });
+        [steam, epic, gog].into_iter().flatten()
+    })
 }
 
 /// Reads the table again from Obelisk's `main` and keeps it in `library`.

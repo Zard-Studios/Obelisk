@@ -33,6 +33,18 @@ final class HomeShelvesTests: XCTestCase {
         XCTAssertEqual(shelves.installed.map(\.title), ["Rocket League", "Portal 2", "Never played"])
     }
 
+    func testTheVerifiedShelfHoldsEveryLibrarysVerifiedGamesTheLastPlayedFirst() throws {
+        let shelves = HomeShelves([
+            try library([game("Skyrim", played: 100, verified: true), game("Portal 2", played: 400),
+                         game("Fallout 4", verified: true)]),
+            try library([game("Rocket League", played: 500, verified: true)], in: .epic),
+        ])
+        XCTAssertEqual(shelves.hero?.title, "Rocket League")
+        XCTAssertEqual(shelves.verified.map(\.title), ["Rocket League", "Skyrim", "Fallout 4"],
+                       "The hero stays on the shelf, and unplayed games follow")
+        XCTAssertTrue(HomeShelves([try library([game("Portal 2", played: 1)])]).verified.isEmpty)
+    }
+
     func testAPlayedGameLeadsBeforeAnotherLibrarysMostPlayed() throws {
         let shelves = HomeShelves([
             try library([game("Celeste", played: 10, minutes: 1)]),
@@ -81,7 +93,7 @@ final class HomeShelvesTests: XCTestCase {
         XCTAssertEqual(shelves.installed.last?.title, "Celeste")
     }
 
-    func testHomeShowsStorefrontCloudLaunchFailures() async throws {
+    func testHomeShowsStorageWarnings() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: "ObeliskHomeNotices-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -93,7 +105,6 @@ final class HomeShelvesTests: XCTestCase {
             games: [EpicGames.game("rocket-league", title: "Rocket League")]
         ))
         let model = AppModel(directory: root, defaults: defaults, epic: epic)
-        model.steam.cloud.connect(account: 42, backend: FakeInstallations())
         let host = NSHostingView(rootView: HomeView(model: model).frame(width: 900, height: 700))
         let rect = NSRect(x: -20_000, y: -20_000, width: 900, height: 700)
         let window = NSWindow(contentRect: rect, styleMask: .borderless, backing: .buffered, defer: false)
@@ -124,23 +135,6 @@ final class HomeShelvesTests: XCTestCase {
         model.steam.storageWarning = nil
         let clearedWarningHeight = try await documentHeight()
         XCTAssertEqual(clearedWarningHeight, baseHeight, accuracy: 0.5)
-
-        model.steam.cloud.sync = GameCloudSync.launch(
-            2405060, question: .failed(1, error: "backend.steam.cloud.unsupported", launchAnyway: true)
-        )
-        let steamFailureHeight = try await documentHeight()
-        XCTAssertGreaterThan(steamFailureHeight, baseHeight)
-
-        model.steam.cloud.sync = nil
-        model.epic.cloud.sync = GameCloudSync.launch(
-            "fixture:rocket-league", question: .failed(2, error: "backend.epic.cloud_network", launchAnyway: true)
-        )
-        let epicFailureHeight = try await documentHeight()
-        XCTAssertGreaterThan(epicFailureHeight, baseHeight)
-
-        model.epic.cloud.sync = nil
-        let finalHeight = try await documentHeight()
-        XCTAssertEqual(finalHeight, baseHeight, accuracy: 0.5)
     }
 
     // MARK: Fixtures
@@ -150,10 +144,12 @@ final class HomeShelvesTests: XCTestCase {
         let played: UInt64
         let minutes: UInt32
         let installed: Bool
+        let verified: Bool
     }
 
-    private func game(_ title: String, played: UInt64 = 0, minutes: UInt32 = 0, installed: Bool = false) -> Entry {
-        Entry(title: title, played: played, minutes: minutes, installed: installed)
+    private func game(_ title: String, played: UInt64 = 0, minutes: UInt32 = 0, installed: Bool = false,
+                      verified: Bool = false) -> Entry {
+        Entry(title: title, played: played, minutes: minutes, installed: installed, verified: verified)
     }
 
     /// The account library of `entries`, as Home shows it under `section`.
@@ -178,7 +174,8 @@ final class HomeShelvesTests: XCTestCase {
                                                             installations: installations)
         library.connect(42)
         library.show(games)
-        return HomeLibrary(library) { game in
+        let verified = Set(zip(games, entries).filter { $1.verified }.map { game, _ in game.appId })
+        return HomeLibrary(library, verified: verified) { game in
             HomeGame(game, of: library, in: section,
                      action: GameAction(kind: .download(.install), title: L10n.string("model.game.download"),
                                         isAvailable: true, launches: false),

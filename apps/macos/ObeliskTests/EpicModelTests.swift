@@ -46,4 +46,9 @@ final class EpicModelTests: XCTestCase {
         XCTAssertTrue(reads.contains(AchievementRead(ids: ["fixture"], locale: "fr", fresh: false)))
         XCTAssertTrue(reads.allSatisfy { $0.locale == "fr" })
     }
+
+    func testTheStoreSearchKeepsAPlusApartFromASpace() {
+        XCTAssertEqual(EpicGames.storeSearchURL("C++ Tycoon").absoluteString,
+                       "https://store.epicgames.com/browse?q=C%2B%2B%20Tycoon&sortBy=relevancy&sortDir=DESC")
+    }
 }

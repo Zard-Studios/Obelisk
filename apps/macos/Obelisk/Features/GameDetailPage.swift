@@ -119,7 +119,7 @@ struct GameDetailPage<Model: LibraryStorefront, HeroArtwork: View, Cover: View, 
             VStack(alignment: .leading, spacing: 0) {
                 // The part of the cover over the artwork.
                 Color.clear.frame(height: Self.coverOverlap)
-                GameLaunchRow(metrics: metrics) {
+                GameLaunchRow(metrics: metrics, note: note) {
                     GamePageAction(installations: installations, gameName: name)
                     if let id = Model.Store.storeGameID(game.id) {
                         GameReportButton(subject: .game(store: Model.Store.storefront, id: id, name: name),
@@ -193,6 +193,12 @@ struct GameDetailPage<Model: LibraryStorefront, HeroArtwork: View, Cover: View, 
         let playtime = model.library.playtime(of: game)
         return showsUnplayed ? GameFormatting.playtime(playtime ?? .zero) : playtime.map(GameFormatting.playtime)
     }
+
+    /// Obelisk's note on the game, in Obelisk's language.
+    private var note: String? {
+        gameNote(storefront: Model.Store.storefront, id: Model.Store.name(game.id), language: L10n.languageCode)
+    }
+
     private var metrics: GameMetrics {
         GameMetrics(
             isInstalled: installations.selectedReceipt != nil,
@@ -211,9 +217,6 @@ struct GameDetailPage<Model: LibraryStorefront, HeroArtwork: View, Cover: View, 
     private var details: some View {
         VStack(alignment: .leading, spacing: 26) {
             StorefrontWarningBanner(message: $model.storageWarning)
-            if model.cloud.failurePresented {
-                SteamCloudFailureView(model: model, storefront: context.storeID)
-            }
             if let message = model.gameSessionMessage {
                 Text(message).font(.system(size: 12)).foregroundStyle(.secondary)
             }

@@ -246,9 +246,9 @@ final class AppModel {
 
     var presentedPrompt: StorefrontPrompt? {
         if steam.rosetta.prompt != nil { return .steamRosetta }
-        if steam.cloud.promptPresented { return .steamCloud }
+        if steam.cloud.question != nil { return .steamCloud }
         if epic.rosetta.prompt != nil { return .epicRosetta }
-        if epic.cloud.promptPresented { return .epicCloud }
+        if epic.cloud.question != nil { return .epicCloud }
         if gog.rosetta.prompt != nil { return .gogRosetta }
         return nil
     }

@@ -4,7 +4,7 @@ import Foundation
 struct GogKeychain: CredentialStore {
     private let store: KeychainStore<StoredGogCredentials>
 
-    init(service: String = AppIdentity.storageIdentifier + ".gog") {
+    init(service: String = AppIdentity.keychainService + ".gog") {
         store = KeychainStore(service: service, account: "gog-session", label: L10n.string("model.brand.gog"))
     }
 

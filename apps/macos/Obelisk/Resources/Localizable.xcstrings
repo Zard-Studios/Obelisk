@@ -8826,6 +8826,75 @@
         }
       }
     },
+    "ui.game.delete_download": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete download"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer le téléchargement"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elimina il download"
+          }
+        }
+      }
+    },
+    "ui.game.delete_download_message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The files downloaded so far will be deleted. Downloading the game again will start over."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les fichiers déjà téléchargés seront supprimés. Un nouveau téléchargement du jeu repartira de zéro."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I file scaricati finora verranno eliminati. Scaricare di nuovo il gioco ripartirà da capo."
+          }
+        }
+      }
+    },
+    "ui.game.delete_download_title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete the download of %@?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer le téléchargement de %@ ?"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eliminare il download di %@?"
+          }
+        }
+      }
+    },
     "ui.game.launch_named": {
       "extractionState": "manual",
       "localizations": {
@@ -9075,6 +9144,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "DIMENSIONE"
+          }
+        }
+      }
+    },
+    "ui.game.note": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OBELISK NOTE"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NOTE D’OBELISK"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NOTA DI OBELISK"
           }
         }
       }
@@ -10343,6 +10435,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cancella la ricerca"
+          }
+        }
+      }
+    },
+    "ui.search.owned_only": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search only looks through the games you own."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La recherche ne porte que sur les jeux que vous possédez."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La ricerca scorre solo i giochi che possiedi."
+          }
+        }
+      }
+    },
+    "ui.search.store": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search %@ Store"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechercher dans le magasin %@"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cerca nello store di %@"
           }
         }
       }
@@ -17559,6 +17697,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Giocati di recente"
+          }
+        }
+      }
+    },
+    "ui.home.verified": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ Verified"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérifiés par %@"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ Verified"
           }
         }
       }

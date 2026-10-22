@@ -4,7 +4,7 @@ import Foundation
 struct EpicKeychain: CredentialStore {
     private let store: KeychainStore<StoredEpicCredentials>
 
-    init(service: String = AppIdentity.storageIdentifier + ".epic") {
+    init(service: String = AppIdentity.keychainService + ".epic") {
         store = KeychainStore(service: service, account: "epic-session", label: L10n.string("model.brand.epic"))
     }
 

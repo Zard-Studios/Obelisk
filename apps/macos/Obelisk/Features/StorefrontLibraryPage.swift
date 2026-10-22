@@ -31,7 +31,7 @@ extension LibraryStorefront {
     func syncCloud() { installations.syncCloud() }
     var unreadCount: Int { 0 }
 
-    /// Names the game a Cloud question or banner is about.
+    /// Names the game a Cloud question is about.
     func cloudTitle(for game: Store.GameID?) -> String {
         guard let game else { return Store.cloudTitle }
         let name = library.game(game)?.title
@@ -59,11 +59,11 @@ final class LibraryScrollMemory {
 /// storefront's Transfer floating at the bottom.
 struct StorefrontLibraryPage<Model: LibraryStorefront, HeroArtwork: View, HeroLogo: View, Artwork: View>: View {
     @Bindable var model: Model
-    /// Names the storefront in accessibility identifiers.
-    let storeID: String
     let storeTitle: String
     let libraryTitle: String
     let scrollMemory: LibraryScrollMemory
+    /// The stores its empty search results offer.
+    let stores: [StoreSearch]
     /// Opens a game's page, from its cover or from the hero.
     let open: (Model.Game, GameOpeningSource) -> Void
     /// The featured game's wide artwork, reaching under the bar.
@@ -80,20 +80,20 @@ struct StorefrontLibraryPage<Model: LibraryStorefront, HeroArtwork: View, HeroLo
 
     init(
         model: Model,
-        storeID: String,
         storeTitle: String,
         libraryTitle: String,
         scrollMemory: LibraryScrollMemory,
+        stores: [StoreSearch],
         open: @escaping (Model.Game, GameOpeningSource) -> Void,
         @ViewBuilder heroArtwork: @escaping (Model.Game) -> HeroArtwork,
         @ViewBuilder heroLogo: @escaping (Model.Game) -> HeroLogo,
         @ViewBuilder artwork: @escaping (Model.Game) -> Artwork
     ) {
         self.model = model
-        self.storeID = storeID
         self.storeTitle = storeTitle
         self.libraryTitle = libraryTitle
         self.scrollMemory = scrollMemory
+        self.stores = stores
         self.open = open
         self.heroArtwork = heroArtwork
         self.heroLogo = heroLogo
@@ -116,9 +116,6 @@ struct StorefrontLibraryPage<Model: LibraryStorefront, HeroArtwork: View, HeroLo
                 }
                 VStack(alignment: .leading, spacing: 22) {
                     StorefrontWarningBanner(message: $model.storageWarning)
-                    if model.cloud.failurePresented {
-                        SteamCloudFailureView(model: model, storefront: storeID)
-                    }
                     library(actions)
                 }
                 .padding(.horizontal, ObeliskStyle.contentPadding)
@@ -181,7 +178,7 @@ struct StorefrontLibraryPage<Model: LibraryStorefront, HeroArtwork: View, HeroLo
                 ProgressView(pending).frame(maxWidth: .infinity, minHeight: 260)
             } else if filtered.isEmpty {
                 StorefrontEmptyLibrary(searchText: Bindable(library).searchText, filter: Bindable(library).filter,
-                                       refresh: model.refresh)
+                                       stores: stores, refresh: model.refresh)
             } else {
                 grid(filtered, actions: actions)
                 if model.isLoadingGames || library.pendingMetadata != nil {

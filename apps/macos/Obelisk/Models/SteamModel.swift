@@ -952,6 +952,11 @@ final class SteamModel {
         WebPageStart(url: GameOverlayController.storeURL(appId: 0), cookies: await webCookies())
     }
 
+    /// Steam's store searching for `query`, signed in as the connected account.
+    func storeSearch(_ query: String) async -> WebPageStart {
+        WebPageStart(url: GameOverlayController.storeSearchURL(query), cookies: await webCookies())
+    }
+
     nonisolated static func cookie(_ cookie: SteamWebCookie) -> HTTPCookie? {
         var properties: [HTTPCookiePropertyKey: Any] = [
             .domain: cookie.domain, .path: "/", .name: cookie.name, .value: cookie.value, .secure: "TRUE",

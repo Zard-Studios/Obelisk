@@ -336,14 +336,48 @@ pub enum RemovalFailure {
 /// contain any of `protected`, and no link may lead to it. Links inside it
 /// are removed, never followed.
 pub fn remove(directory: &Path, expected: &str, protected: &[&Path]) -> Result<(), RemovalFailure> {
+    let (resolved, _lock) = held(directory, expected, protected)?;
+    Ok(fs::remove_dir_all(&resolved)?)
+}
+
+/// Removes, as [`remove`] does, the folder of a Transfer that never
+/// finished. `false` when nothing of it is there to remove: no folder, as a
+/// Transfer stopped before its first file leaves, or one an Installation
+/// receipt names, an installation since. The receipt is read under the lock
+/// every Transfer holds, so none publishes one meanwhile.
+pub fn remove_unfinished(
+    directory: &Path,
+    expected: &str,
+    protected: &[&Path],
+) -> Result<bool, RemovalFailure> {
+    if !directory.exists() {
+        return Ok(false);
+    }
+    let (resolved, _lock) = held(directory, expected, protected)?;
+    match receipt_in::<serde::de::IgnoredAny>(&resolved) {
+        Ok(None) => {}
+        Ok(Some(_)) => return Ok(false),
+        Err(_) => return Err(RemovalFailure::Unsafe(directory.to_owned())),
+    }
+    fs::remove_dir_all(&resolved)?;
+    Ok(true)
+}
+
+/// The dedicated installation folder `directory`, resolved, under its
+/// installation lock.
+fn held(
+    directory: &Path,
+    expected: &str,
+    protected: &[&Path],
+) -> Result<(PathBuf, File), RemovalFailure> {
     let refuse = || RemovalFailure::Unsafe(directory.to_owned());
     let resolved = dedicated(directory, expected, protected)?.ok_or_else(refuse)?;
-    let _lock = lock(&resolved).map_err(|failure| match failure {
+    let lock = lock(&resolved).map_err(|failure| match failure {
         InstallFailure::Locked => RemovalFailure::Busy,
         InstallFailure::Io(error) => RemovalFailure::Io(error),
         _ => refuse(),
     })?;
-    Ok(fs::remove_dir_all(&resolved)?)
+    Ok((resolved, lock))
 }
 
 /// The canonical path of a storefront's dedicated installation folder: named

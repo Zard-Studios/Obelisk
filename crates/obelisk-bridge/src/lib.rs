@@ -28,6 +28,8 @@ mod locations;
 pub use locations::*;
 mod diagnostics;
 pub use diagnostics::*;
+mod game_notes;
+pub use game_notes::*;
 mod installations;
 pub use installations::*;
 mod games_folder;

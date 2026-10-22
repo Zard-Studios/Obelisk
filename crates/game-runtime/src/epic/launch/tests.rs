@@ -131,7 +131,7 @@ impl Services for FakeEpic {
     fn stop_presence(&self) {
         record(&fixture_directory().0, "presence:false");
     }
-    async fn disconnect(&self) {}
+    fn release(&self) {}
     async fn cloud(
         self: &Arc<Self>,
         _: Configuration,
