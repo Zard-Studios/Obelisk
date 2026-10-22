@@ -49,6 +49,8 @@ struct SettingsView: View {
                             ObeliskCardDivider()
                             overlay
                             ObeliskCardDivider()
+                            controllerLayout
+                            ObeliskCardDivider()
                             sharePerformance
                         }
                     }
@@ -164,6 +166,20 @@ struct SettingsView: View {
                 .labelsHidden()
                 .pointerCursor()
                 .accessibilityIdentifier("settings-update-automatically")
+        }
+    }
+
+    private var controllerLayout: some View {
+        ObeliskRow(title: L10n.string("ui.settings.controller_layout")) {
+            SymbolTile(name: "gamecontroller.fill", colors: TileColors.red)
+        } detail: {
+            Text(L10n.string("ui.settings.controller_layout_description"))
+        } accessory: {
+            Toggle(L10n.string("ui.settings.controller_layout"), isOn: $model.usesNintendoControllerLayout)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .pointerCursor()
+                .accessibilityIdentifier("settings-controller-layout")
         }
     }
 
