@@ -149,3 +149,14 @@ fn a_game_without_any_language_gets_utf8_english() {
     );
     assert!(!environment.contains_key("USER"));
 }
+
+#[test]
+fn a_game_gets_the_gamepad_mapping_of_the_layout_its_player_chose() {
+    let chosen = |layout: &'static str| {
+        environment_from(Path::new("/Users/player"), move |key| {
+            (key == "OBELISK_CONTROLLER_LAYOUT").then(|| layout.to_owned())
+        })
+    };
+    assert!(chosen("nintendo").contains_key("SDL_GAMECONTROLLERCONFIG"));
+    assert!(!chosen("xbox").contains_key("SDL_GAMECONTROLLERCONFIG"));
+}

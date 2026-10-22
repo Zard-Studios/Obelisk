@@ -8,6 +8,13 @@ struct Places {
     elsewhere: PathBuf,
 }
 
+/// Moving prefixes is guarded for the whole process, so the tests that read
+/// or move prefixes take turns.
+fn serial() -> std::sync::MutexGuard<'static, ()> {
+    static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    TURN.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 fn places() -> Places {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().canonicalize().unwrap();
@@ -33,6 +40,7 @@ fn prefix(folder: &Path, name: &str) -> PathBuf {
 
 #[test]
 fn prefixes_are_in_obelisk_s_library_and_unshared_until_the_player_chooses() {
+    let _serial = serial();
     let places = places();
     assert_eq!(folder(&places.library), places.library.join("Prefixes"));
     assert!(!shared(&places.library));
@@ -44,6 +52,7 @@ fn prefixes_are_in_obelisk_s_library_and_unshared_until_the_player_chooses() {
 
 #[test]
 fn a_game_without_a_prefix_shares_one_when_asked_and_a_game_with_one_keeps_it() {
+    let _serial = serial();
     let places = places();
     let folder = folder(&places.library);
     prefix(&folder, "steam-620-windows");
@@ -73,6 +82,7 @@ fn a_game_without_a_prefix_shares_one_when_asked_and_a_game_with_one_keeps_it() 
 
 #[test]
 fn the_prefixes_move_to_a_chosen_folder_with_their_links_and_stay_there() {
+    let _serial = serial();
     let places = places();
     let from = folder(&places.library);
     prefix(&from, "steam-620-windows");
@@ -109,6 +119,7 @@ fn the_prefixes_move_to_a_chosen_folder_with_their_links_and_stay_there() {
 
 #[test]
 fn nothing_moves_while_a_game_runs_into_a_folder_that_cannot_hold_them_or_over_a_prefix() {
+    let _serial = serial();
     let places = places();
     let from = folder(&places.library);
     prefix(&from, "steam-620-windows");
@@ -142,6 +153,7 @@ fn nothing_moves_while_a_game_runs_into_a_folder_that_cannot_hold_them_or_over_a
 
 #[test]
 fn a_prefixes_disk_that_is_not_connected_makes_them_unavailable() {
+    let _serial = serial();
     let places = places();
     assert!(!unavailable(&places.library));
     fs::write(
@@ -157,6 +169,7 @@ fn a_prefixes_disk_that_is_not_connected_makes_them_unavailable() {
 
 #[test]
 fn a_kept_choice_that_cannot_be_read_or_names_a_relative_folder_means_the_defaults() {
+    let _serial = serial();
     let places = places();
     fs::write(places.library.join(FILE), b"not json").unwrap();
     assert_eq!(load(&places.library), Setting::default());
