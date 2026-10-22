@@ -20,6 +20,16 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(AppModel(directory: root, defaults: defaults).appearance, .dark)
     }
 
+    func testObeliskNeedsToStayOnlyWhileAGameATransferOrACloudSyncWorks() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suite = "ObeliskTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(directory: root, defaults: defaults)
+        XCTAssertFalse(model.isBusy, "a fresh Obelisk has nothing to finish: closing it quits it")
+    }
+
     func testTheChosenLanguageIsObelisksOwnAppleLanguagesUntilThePlayerFollowsTheMacAgain() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

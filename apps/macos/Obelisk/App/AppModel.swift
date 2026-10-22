@@ -206,6 +206,20 @@ final class AppModel {
         return Set(directories.filter { $0.hasPrefix(prefix) }).count
     }
 
+    /// Whether something needs Obelisk to go on without its window: a game
+    /// runs or settles its Cloud saves, or a Transfer, a launch, an uninstall
+    /// or a Cloud sync works or waits.
+    var isBusy: Bool {
+        downloads.running != nil || !downloads.waiting.isEmpty
+            || steam.gameSessions.active != nil || epic.gameSessions.active != nil || gog.gameSessions.active != nil
+            || works(steam.installations) || works(epic.installations) || works(gog.installations)
+    }
+
+    private func works<Store: InstallationStorefront>(_ installations: GameInstallations<Store>) -> Bool {
+        installations.isDownloading || installations.isLaunching || installations.isUninstalling
+            || installations.cloud.sync != nil
+    }
+
     /// The games whose move into the games folder waits or runs.
     var gamesMoving: Int {
         downloads.waiting.count(where: { $0.kind == .move }) + (downloads.running?.kind == .move ? 1 : 0)

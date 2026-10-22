@@ -1,10 +1,13 @@
 import AppKit
 import SwiftUI
 
-/// Quitting Obelisk, or closing its window, hides it: it keeps running in the
-/// menu bar, as Steam does, so its Game sessions and Transfers go on. It really
-/// quits from its menu bar item, after stopping a running game, when macOS
-/// logs out, restarts or shuts down, or for Sparkle to install a new version.
+/// Quitting Obelisk, or closing its window, ends it when nothing needs it. A
+/// game it started would stop with it, and so would a Transfer or a Cloud
+/// sync: while one runs, closing the window only hides Obelisk, which keeps
+/// running in the menu bar, and it ends by itself once the last one is done.
+/// It also really quits from its menu bar item, after stopping a running game,
+/// when macOS logs out, restarts or shuts down, or for Sparkle to install a
+/// new version.
 @MainActor
 final class AppLifecycle: NSObject, NSApplicationDelegate {
     /// Asks the menu bar item, which can open windows, to show the library.
@@ -12,6 +15,11 @@ final class AppLifecycle: NSObject, NSApplicationDelegate {
     /// How long quitting waits for stopped games to settle their Cloud saves.
     private static let settleTimeout: Duration = .seconds(60)
 
+    /// Whether something needs Obelisk to go on without its window: a game, a
+    /// Transfer, a Cloud sync. Obelisk stays while the answer is yes.
+    var busy: @MainActor () -> Bool = { true }
+    /// Ends Obelisk once, hidden, nothing needs it any longer.
+    private var watcher: Task<Void, Never>?
     /// Whether a game runs, and how to stop every one of them.
     var games: (running: @MainActor () -> Bool, stop: @MainActor () async -> Void) = ({ false }, {})
     /// The library cache, whose last changes are still being written.
@@ -36,11 +44,18 @@ final class AppLifecycle: NSObject, NSApplicationDelegate {
         // Closing the last library window hides Obelisk like quitting does.
         windowClosing = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: nil, queue: .main
-        ) { notification in
+        ) { [weak self] notification in
             let closing = notification.object as? NSWindow
             MainActor.assumeIsolated {
+                guard let self else { return }
                 let others = NSApp.windows.filter { $0 !== closing && $0.isVisible && $0.canBecomeMain }
-                if others.isEmpty { NSApp.setActivationPolicy(.accessory) }
+                guard others.isEmpty else { return }
+                if self.busy() {
+                    NSApp.setActivationPolicy(.accessory)
+                    self.watchUntilIdle()
+                } else if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+                    Task { @MainActor in NSApp.terminate(nil) }
+                }
             }
         }
     }
@@ -48,6 +63,8 @@ final class AppLifecycle: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if quitting { return .terminateNow }
         guard Self.systemQuit else {
+            // Nothing runs: closing Obelisk is just closing it.
+            if !busy() { return .terminateNow }
             hide()
             return .terminateCancel
         }
@@ -72,6 +89,8 @@ final class AppLifecycle: NSObject, NSApplicationDelegate {
 
     /// Shows the library window and Obelisk's Dock icon.
     func show() {
+        watcher?.cancel()
+        watcher = nil
         NSApp.setActivationPolicy(.regular)
         NotificationCenter.default.post(name: Self.showLibrary, object: nil)
         NSApp.activate()
@@ -81,6 +100,27 @@ final class AppLifecycle: NSObject, NSApplicationDelegate {
     func hide() {
         for window in NSApp.windows where window.canBecomeMain { window.close() }
         NSApp.setActivationPolicy(.accessory)
+        watchUntilIdle()
+    }
+
+    /// Ends Obelisk once it is hidden and nothing has needed it for a few
+    /// checks in a row: a Transfer that hands over to the next one is not
+    /// the end.
+    private func watchUntilIdle() {
+        guard watcher == nil else { return }
+        watcher = Task { [weak self] in
+            var idle = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(4))
+                guard let self, NSApp.activationPolicy() == .accessory else { return }
+                idle = self.busy() ? 0 : idle + 1
+                if idle >= 3 {
+                    self.watcher = nil
+                    NSApp.terminate(nil)
+                    return
+                }
+            }
+        }
     }
 
     /// Really quits: a running game is stopped first, once the player agrees,
@@ -180,6 +220,7 @@ struct AppMenuBarLabel: View {
         Image("MenuBarIcon")
             .onAppear {
                 lifecycle.libraryCache = model.libraryCache
+                lifecycle.busy = { model.isBusy }
                 model.overlay.showLibrary = { lifecycle.show() }
                 model.restart = { lifecycle.restart() }
                 model.updates.quitToInstall = { install in lifecycle.update(install) }
