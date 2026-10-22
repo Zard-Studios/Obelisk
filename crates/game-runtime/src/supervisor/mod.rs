@@ -30,7 +30,8 @@ pub(crate) fn plain_absolute(path: &Path) -> bool {
 /// The conversions a storefront's session `Error` makes from the
 /// supervisor's and the runtime's errors, alike for Epic and GOG: its
 /// `Session`, `Busy`, `Cancelled`, `Storage`, `Unsupported`, `NotNative`,
-/// `RosettaUnavailable` and `WineUnavailable` stand for them.
+/// `RosettaUnavailable`, `WineUnavailable` and `PrefixesUnavailable` stand for
+/// them.
 macro_rules! session_error_conversions {
     ($error:ty) => {
         impl From<$crate::supervisor::Error> for $error {
@@ -50,6 +51,7 @@ macro_rules! session_error_conversions {
                 match error {
                     $crate::Error::RosettaUnavailable => Self::RosettaUnavailable,
                     $crate::Error::WineUnavailable => Self::WineUnavailable,
+                    $crate::Error::PrefixesUnavailable => Self::PrefixesUnavailable,
                     $crate::Error::IncompatibleArchitecture => Self::NotNative,
                     $crate::Error::InvalidApplication | $crate::Error::NotExecutable => {
                         Self::Unsupported

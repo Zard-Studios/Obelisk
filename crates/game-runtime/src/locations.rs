@@ -23,7 +23,10 @@ pub struct Locations {
     /// The Voile runtimes that run Windows games: the pinned release and a
     /// development runtime.
     pub voile: PathBuf,
-    /// One Wine prefix per Windows installation, named after its folder.
+    /// Where the Wine prefixes were when the library was read: one per
+    /// Windows installation, named after its folder, unless the player chose
+    /// another folder or one shared prefix. `prefixes::folder` tells where
+    /// they are now.
     pub wine_prefixes: PathBuf,
 }
 
@@ -41,7 +44,7 @@ impl Locations {
             steam_runtime_package: crate::valve::payload(&steam_runtime_cache),
             steam_runtime_cache,
             voile: library.join("Voile"),
-            wine_prefixes: library.join("Prefixes"),
+            wine_prefixes: crate::prefixes::folder(library),
             library: library.to_owned(),
             home: home.to_owned(),
         }

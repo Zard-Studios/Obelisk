@@ -381,3 +381,160 @@ final class GamesFolderModel {
         return error.localizedDescription
     }
 }
+
+/// Where Windows games' Wine prefixes are, as Rust keeps them. A change
+/// returns once the prefixes have moved.
+@MainActor
+protocol PrefixesBackend: AnyObject {
+    func state() -> PrefixesState
+    /// The prefixes' size in bytes. It walks their folder.
+    func size() async -> UInt64
+    func setShared(_ shared: Bool) throws
+    /// Moves every prefix to the folder `chosen` gives. Nothing moves while
+    /// a game `running`.
+    func choose(_ chosen: String, running: Bool) async throws
+    func chooseDefault(running: Bool) async throws
+}
+
+final class RustPrefixes: PrefixesBackend {
+    private let core: PrefixesFolder
+
+    init(library: URL) {
+        core = PrefixesFolder(library: library.path)
+    }
+
+    func state() -> PrefixesState { core.state() }
+    func size() async -> UInt64 { await core.size() }
+    func setShared(_ shared: Bool) throws { try core.setShared(shared: shared) }
+    func choose(_ chosen: String, running: Bool) async throws { try await core.choose(chosen: chosen, running: running) }
+    func chooseDefault(running: Bool) async throws { try await core.chooseDefault(running: running) }
+}
+
+/// A folder the player picked for the Windows environments, before they agree.
+struct PrefixesProposal: Identifiable, Equatable {
+    let id = UUID()
+    /// The folder the player picked; nil for Obelisk's own on this Mac.
+    let chosen: URL?
+    /// The disk's name, as Finder shows it.
+    let volume: String
+    let bytes: UInt64
+}
+
+/// The Windows environments, the Wine prefixes of Windows games: where they
+/// are, whether games share one, and the player's move of them.
+@MainActor @Observable
+final class PrefixesModel {
+    private(set) var path: String
+    /// Obelisk's own folder, inside its library on this Mac.
+    private(set) var isDefault: Bool
+    /// Whether their disk is there: Obelisk's own folder always is.
+    private(set) var isConnected: Bool
+    /// Games without an environment of their own share one.
+    private(set) var isShared: Bool
+    /// What they take, once counted.
+    private(set) var bytes: UInt64?
+    private(set) var isMoving = false
+    /// The move the player is asked to agree to.
+    var proposal: PrefixesProposal?
+    /// Why the last change was not made.
+    var failure: String?
+    /// Whether a game runs: nothing moves then.
+    @ObservationIgnored var isRunning: @MainActor () -> Bool = { false }
+
+    @ObservationIgnored private let backend: any PrefixesBackend
+
+    init(library: URL, backend: (any PrefixesBackend)? = nil) {
+        let backend = backend ?? RustPrefixes(library: library)
+        self.backend = backend
+        let state = backend.state()
+        path = state.path
+        isDefault = state.isDefault
+        isConnected = state.isConnected
+        isShared = state.shared
+    }
+
+    /// Reads where they are and what they take, again.
+    func refresh() {
+        apply(backend.state())
+        Task { bytes = await backend.size() }
+    }
+
+    private func apply(_ state: PrefixesState) {
+        if path != state.path { path = state.path }
+        if isDefault != state.isDefault { isDefault = state.isDefault }
+        if isConnected != state.isConnected { isConnected = state.isConnected }
+        if isShared != state.shared { isShared = state.shared }
+    }
+
+    /// Lets games without an environment share one, or not.
+    func setShared(_ shared: Bool) {
+        failure = nil
+        do {
+            try backend.setShared(shared)
+        } catch {
+            failure = L10n.string("model.prefixes.failed", L10n.message(Self.reason(error)))
+        }
+        apply(backend.state())
+    }
+
+    /// Asks the player to move the environments to the folder they picked.
+    func propose(_ folder: URL) {
+        let volume = GamesFolderProposal.volume(of: folder)
+        // A prefix holds links, which only a Mac format keeps.
+        if volume.readOnly {
+            failure = L10n.string("ui.games_folder.read_only", volume.name)
+        } else if let format = volume.format {
+            failure = L10n.string("ui.prefixes.format", volume.name, format)
+        } else {
+            ask(chosen: folder, volume: volume)
+        }
+    }
+
+    /// Asks the player to move the environments back to this Mac.
+    func proposeDefault() {
+        let library = URL(filePath: path, directoryHint: .isDirectory).deletingLastPathComponent()
+        ask(chosen: nil, volume: GamesFolderProposal.volume(of: library))
+    }
+
+    private func ask(chosen: URL?, volume: (name: String, available: UInt64?, format: String?, readOnly: Bool)) {
+        failure = nil
+        Task {
+            let bytes = await backend.size()
+            if let available = volume.available, available < bytes {
+                failure = L10n.string("ui.games_folder.no_space", volume.name,
+                                      ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .file),
+                                      ByteCountFormatter.string(fromByteCount: Int64(clamping: available), countStyle: .file))
+                return
+            }
+            proposal = PrefixesProposal(chosen: chosen, volume: volume.name, bytes: bytes)
+        }
+    }
+
+    /// Moves the environments where the player agreed.
+    func confirm() {
+        guard let proposal, !isMoving else { return }
+        self.proposal = nil
+        let running = isRunning()
+        isMoving = true
+        Task {
+            defer {
+                isMoving = false
+                refresh()
+            }
+            do {
+                if let chosen = proposal.chosen {
+                    try await backend.choose(chosen.path, running: running)
+                } else {
+                    try await backend.chooseDefault(running: running)
+                }
+            } catch {
+                failure = L10n.string("model.prefixes.failed", L10n.message(Self.reason(error)))
+            }
+        }
+    }
+
+    private static func reason(_ error: Error) -> String {
+        if case let GameSessionError.Failure(reason) = error { return reason }
+        return error.localizedDescription
+    }
+}

@@ -101,11 +101,13 @@ impl Default for GraphicsOptions {
     }
 }
 
-/// The Wine prefix of the Windows installation in `install`, named after the
-/// installation's folder.
-pub fn prefix(prefixes: &Path, install: &Path) -> Result<PathBuf, Error> {
+/// The Wine prefix of the Windows installation in `install`: the one named
+/// after the installation's folder, which a game keeps once it has it, else
+/// the one games share when the player asked for it. Where the prefixes are is
+/// what the player last chose, and not what `locations` read at start.
+pub fn prefix(locations: &crate::Locations, install: &Path) -> Result<PathBuf, Error> {
     let name = install.file_name().ok_or(Error::NotExecutable)?;
-    Ok(prefixes.join(name))
+    Ok(crate::prefixes::of(&locations.library, name))
 }
 
 impl Config {
@@ -503,7 +505,11 @@ impl Installation {
         // player's, unless they gave one of their own.
         let language = crate::profile::language_arguments(game, &settings.arguments);
         settings.profile_arguments.extend(language);
-        let rosetta = prefix(&locations.wine_prefixes, install)?;
+        // Their disk is away, or they are moving: no game starts in them.
+        if crate::prefixes::unavailable(&locations.library) {
+            return Err(Error::PrefixesUnavailable);
+        }
+        let rosetta = prefix(locations, install)?;
         let prefix = settings.engine.adapter().prefix(&rosetta)?;
         Ok(Some(Self {
             install: install.to_owned(),
@@ -553,13 +559,14 @@ impl Installation {
         locations: &crate::Locations,
         forget: impl Fn(&str) -> bool,
     ) -> std::io::Result<()> {
-        let rosetta = prefix(&locations.wine_prefixes, &self.install)
+        let rosetta = prefix(locations, &self.install)
             .map_err(|error| std::io::Error::other(error.to_string()))?;
         rosetta::forget_prerequisites(&rosetta, forget)
     }
 
     /// Deletes the prefixes of the uninstalled installation, as Steam deletes
-    /// a Proton prefix, and its launch settings. Both engines' go, whichever
+    /// a Proton prefix, and its launch settings; not the one games share.
+    /// Both engines' go, whichever
     /// runs the game now: an earlier launch may have made the other's before
     /// the game moved. A missing prefix is already gone; a link in its place
     /// is never followed.
@@ -569,10 +576,13 @@ impl Installation {
     ) -> Result<(), obelisk_core::installation::RemovalFailure> {
         use obelisk_core::installation::RemovalFailure;
         let unsafe_prefix = |_| RemovalFailure::Unsafe(self.prefix.clone());
-        let rosetta = prefix(&locations.wine_prefixes, &self.install).map_err(unsafe_prefix)?;
-        for engine in [Engine::Linux, Engine::Rosetta] {
-            let adapter = engine.adapter();
-            adapter.remove(locations, &adapter.prefix(&rosetta).map_err(unsafe_prefix)?)?;
+        let rosetta = prefix(locations, &self.install).map_err(unsafe_prefix)?;
+        // The prefix games share stays: other games live in it.
+        if !crate::prefixes::is_shared(&rosetta) {
+            for engine in [Engine::Linux, Engine::Rosetta] {
+                let adapter = engine.adapter();
+                adapter.remove(locations, &adapter.prefix(&rosetta).map_err(unsafe_prefix)?)?;
+            }
         }
         crate::launch_settings::remove(&locations.library, &self.install)?;
         Ok(())

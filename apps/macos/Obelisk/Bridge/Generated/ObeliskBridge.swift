@@ -3261,6 +3261,232 @@ public func FfiConverterTypeLibraryCache_lower(_ value: LibraryCache) -> UInt64 
 
 
 /**
+ * The Wine prefixes of Obelisk's `library`.
+ */
+public protocol PrefixesFolderProtocol: AnyObject, Sendable {
+    
+    /**
+     * Moves every prefix to the folder `chosen` gives, which holds them from
+     * then on. `running` tells a game runs: nothing moves then.
+     */
+    func choose(chosen: String, running: Bool) async throws 
+    
+    /**
+     * Moves every prefix back to Obelisk's own folder.
+     */
+    func chooseDefault(running: Bool) async throws 
+    
+    /**
+     * Lets games without a prefix of their own share one, or not; each game
+     * keeps the one it has.
+     */
+    func setShared(shared: Bool) throws 
+    
+    /**
+     * The prefixes' size in bytes. It walks their folder.
+     */
+    func size() async  -> UInt64
+    
+    func state()  -> PrefixesState
+    
+}
+/**
+ * The Wine prefixes of Obelisk's `library`.
+ */
+open class PrefixesFolder: PrefixesFolderProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_obelisk_bridge_fn_clone_prefixesfolder(self.handle, $0) }
+    }
+public convenience init(library: String) {
+    let handle =
+        try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_constructor_prefixesfolder_new(
+        FfiConverterString.lower(library),uniffiCallStatus
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_obelisk_bridge_fn_free_prefixesfolder(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * Moves every prefix to the folder `chosen` gives, which holds them from
+     * then on. `running` tells a game runs: nothing moves then.
+     */
+open func choose(chosen: String, running: Bool)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_prefixesfolder_choose(
+                        self.uniffiCloneHandle(),FfiConverterString.lower(chosen),FfiConverterBool.lower(running)
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_void,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_void,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeGameSessionError_lift
+        )
+}
+    
+    /**
+     * Moves every prefix back to Obelisk's own folder.
+     */
+open func chooseDefault(running: Bool)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_prefixesfolder_choose_default(
+                        self.uniffiCloneHandle(),FfiConverterBool.lower(running)
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_void,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_void,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeGameSessionError_lift
+        )
+}
+    
+    /**
+     * Lets games without a prefix of their own share one, or not; each game
+     * keeps the one it has.
+     */
+open func setShared(shared: Bool)throws   {try rustCallWithError(FfiConverterTypeGameSessionError_lift) {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_method_prefixesfolder_set_shared(
+            self.uniffiCloneHandle(),
+        FfiConverterBool.lower(shared),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * The prefixes' size in bytes. It walks their folder.
+     */
+open func size()async  -> UInt64  {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_obelisk_bridge_fn_method_prefixesfolder_size(
+                        self.uniffiCloneHandle()
+                )
+            },
+            pollFunc: ffi_obelisk_bridge_rust_future_poll_u64,
+            completeFunc: ffi_obelisk_bridge_rust_future_complete_u64,
+            freeFunc: ffi_obelisk_bridge_rust_future_free_u64,
+            liftFunc: FfiConverterUInt64.lift,
+            errorHandler: nil
+            
+        )
+}
+    
+open func state() -> PrefixesState  {
+    return try!  FfiConverterTypePrefixesState_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_method_prefixesfolder_state(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePrefixesFolder: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = PrefixesFolder
+
+    public static func lift(_ handle: UInt64) throws -> PrefixesFolder {
+        return PrefixesFolder(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: PrefixesFolder) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PrefixesFolder {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: PrefixesFolder, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePrefixesFolder_lift(_ handle: UInt64) throws -> PrefixesFolder {
+    return try FfiConverterTypePrefixesFolder.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePrefixesFolder_lower(_ value: PrefixesFolder) -> UInt64 {
+    return FfiConverterTypePrefixesFolder.lower(value)
+}
+
+
+
+
+
+
+/**
  * Debug-only controlled chat and own-game sources. They use the production
  * decoders and observation, letting macOS tests drive both streams.
  */
@@ -8624,6 +8850,89 @@ public func FfiConverterTypeObeliskLocations_lift(_ buf: RustBuffer) throws -> O
 #endif
 public func FfiConverterTypeObeliskLocations_lower(_ value: ObeliskLocations) -> RustBuffer {
     return FfiConverterTypeObeliskLocations.lower(value)
+}
+
+
+/**
+ * Where the prefixes are now.
+ */
+public struct PrefixesState: Equatable, Hashable {
+    public var path: String
+    /**
+     * Obelisk's own folder, inside its library.
+     */
+    public var isDefault: Bool
+    /**
+     * Games without a prefix of their own share one.
+     */
+    public var shared: Bool
+    /**
+     * Their disk is there: Obelisk's own folder always is.
+     */
+    public var isConnected: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(path: String, 
+        /**
+         * Obelisk's own folder, inside its library.
+         */isDefault: Bool, 
+        /**
+         * Games without a prefix of their own share one.
+         */shared: Bool, 
+        /**
+         * Their disk is there: Obelisk's own folder always is.
+         */isConnected: Bool) {
+        self.path = path
+        self.isDefault = isDefault
+        self.shared = shared
+        self.isConnected = isConnected
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PrefixesState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePrefixesState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PrefixesState {
+        return
+            try PrefixesState(
+                path: FfiConverterString.read(from: &buf), 
+                isDefault: FfiConverterBool.read(from: &buf), 
+                shared: FfiConverterBool.read(from: &buf), 
+                isConnected: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PrefixesState, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterBool.write(value.isDefault, into: &buf)
+        FfiConverterBool.write(value.shared, into: &buf)
+        FfiConverterBool.write(value.isConnected, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePrefixesState_lift(_ buf: RustBuffer) throws -> PrefixesState {
+    return try FfiConverterTypePrefixesState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePrefixesState_lower(_ value: PrefixesState) -> RustBuffer {
+    return FfiConverterTypePrefixesState.lower(value)
 }
 
 
@@ -16370,6 +16679,21 @@ private let initializationResult: InitializationResult = {
     if (uniffi_obelisk_bridge_checksum_method_librarycache_steam_library() != 28886) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_obelisk_bridge_checksum_method_prefixesfolder_choose() != 34624) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_prefixesfolder_choose_default() != 21863) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_prefixesfolder_set_shared() != 64709) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_prefixesfolder_size() != 31626) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_prefixesfolder_state() != 18216) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_obelisk_bridge_checksum_method_steamlogin_challenge() != 44547) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -16560,6 +16884,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_constructor_librarycache_new() != 37002) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_constructor_prefixesfolder_new() != 52180) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_constructor_steamlogin_begin_credentials() != 63849) {

@@ -11,8 +11,9 @@ struct SettingsView: View {
     @Bindable var model: AppModel
     @State private var showsBackdrop = false
     @State private var showsTitle = false
-    /// The player picks another folder to hold games.
+    /// The player picks another folder, to hold games or the Windows environments.
     @State private var picksGamesFolder = false
+    @State private var picksPrefixes = false
 
     /// The hero's height below the bar it reaches under.
     private static var heroHeight: CGFloat { 210 }
@@ -103,7 +104,12 @@ struct SettingsView: View {
         }
         .ignoresSafeArea(.container, edges: .top)
         .fileImporter(isPresented: $picksGamesFolder, allowedContentTypes: [.folder]) { result in
-            if case let .success(folder) = result { model.gamesFolder.add(folder) }
+            guard case let .success(folder) = result else { return }
+            if picksPrefixes {
+                model.prefixes.propose(folder)
+            } else {
+                model.gamesFolder.add(folder)
+            }
         }
         .fileDialogMessage(L10n.string("ui.settings.games_folder_pick", AppIdentity.name))
         .fileDialogConfirmationLabel(L10n.string("ui.settings.games_folder_pick_confirm"))
@@ -113,6 +119,17 @@ struct SettingsView: View {
                              confirm: model.gamesFolder.confirm)
         }
         .errorAlert(L10n.string("ui.settings.games_folder_failed"), message: Bindable(model.gamesFolder).failure)
+        .errorAlert(L10n.string("ui.settings.games_folder_failed"), message: Bindable(model.prefixes).failure)
+        .alert(prefixesTitle, isPresented: Binding(get: { model.prefixes.proposal != nil },
+                                                   set: { if !$0 { model.prefixes.proposal = nil } })) {
+            Button(L10n.string("ui.common.cancel"), role: .cancel) {}
+            Button(L10n.string("ui.prefixes.move")) { model.prefixes.confirm() }
+        } message: {
+            Text(L10n.string("ui.prefixes.move_message",
+                             ByteCountFormatter.string(fromByteCount: Int64(clamping: model.prefixes.proposal?.bytes ?? 0),
+                                                       countStyle: .file)))
+        }
+        .onAppear { model.prefixes.refresh() }
         .alert(L10n.string("ui.games_folder.added"),
                isPresented: Binding(get: { model.gamesFolder.notice != nil },
                                     set: { if !$0 { model.gamesFolder.notice = nil } })) {
@@ -247,8 +264,90 @@ struct SettingsView: View {
                 }
             }
             ObeliskCard {
+                windowsEnvironments
+                ObeliskCardDivider()
+                sharedEnvironment
+            }
+            ObeliskCard {
                 libraryFolder
             }
+        }
+    }
+
+    private var prefixesTitle: String {
+        guard let proposal = model.prefixes.proposal else { return "" }
+        return proposal.chosen == nil
+            ? L10n.string("ui.prefixes.move_title_mac")
+            : L10n.string("ui.prefixes.move_title", proposal.volume)
+    }
+
+    /// Where Wine keeps the Windows games' environments: its folder, what
+    /// they take, and the menu that moves them.
+    private var windowsEnvironments: some View {
+        let prefixes = model.prefixes
+        let size = prefixes.bytes.map {
+            L10n.string("ui.prefixes.size", ByteCountFormatter.string(fromByteCount: Int64(clamping: $0), countStyle: .file))
+        }
+        return ObeliskRow(title: L10n.string("ui.prefixes.title")) {
+            SymbolTile(name: prefixes.isDefault ? "macwindow" : "externaldrive.fill", colors: TileColors.violet)
+        } detail: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text([L10n.string("ui.prefixes.description"), size].compactMap { $0 }.joined(separator: " · "))
+                if !prefixes.isConnected {
+                    Label(L10n.string("ui.prefixes.disconnected"), systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
+                FolderPath(path: prefixes.path)
+            }
+        } accessory: {
+            if prefixes.isMoving {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(L10n.string("ui.prefixes.moving")).foregroundStyle(.secondary)
+                }
+            } else {
+                Menu {
+                    Button(L10n.string("ui.settings.show_in_finder"), systemImage: "folder") {
+                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: prefixes.path)
+                    }
+                    .disabled(!prefixes.isConnected)
+                    Button(L10n.string("ui.prefixes.choose"), systemImage: "externaldrive") {
+                        picksPrefixes = true
+                        picksGamesFolder = true
+                    }
+                    if !prefixes.isDefault {
+                        Button(L10n.string("ui.prefixes.back"), systemImage: "arrow.uturn.backward") {
+                            prefixes.proposeDefault()
+                        }
+                        .disabled(!prefixes.isConnected)
+                    }
+                } label: {
+                    StorefrontGlassIcon(systemName: "ellipsis", size: 13)
+                        .foregroundStyle(.primary)
+                }
+                .menuStyle(.button)
+                .obeliskButtonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityLabel(L10n.string("ui.games_folder.manage"))
+                .accessibilityIdentifier("settings-manage-prefixes")
+                .help(L10n.string("ui.games_folder.manage"))
+            }
+        }
+    }
+
+    /// Whether games without an environment share one, instead of each
+    /// making its own.
+    private var sharedEnvironment: some View {
+        ObeliskRow(title: L10n.string("ui.prefixes.shared_title")) {
+            SymbolTile(name: "square.stack.3d.up.fill", colors: TileColors.violet)
+        } detail: {
+            Text(L10n.string("ui.prefixes.shared_description"))
+        } accessory: {
+            Toggle(L10n.string("ui.prefixes.shared_title"),
+                   isOn: Binding(get: { model.prefixes.isShared }, set: { model.prefixes.setShared($0) }))
+                .toggleStyle(.switch)
+                .labelsHidden()
         }
     }
 
@@ -328,6 +427,7 @@ struct SettingsView: View {
             SymbolTile(name: "plus", colors: TileColors.blue)
         } accessory: {
             GlassCapsuleButton(title: L10n.string("ui.games_folder.add"), identifier: "settings-add-games-folder") {
+                picksPrefixes = false
                 picksGamesFolder = true
             }
         }

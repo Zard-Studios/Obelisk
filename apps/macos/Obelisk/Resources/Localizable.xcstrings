@@ -10721,19 +10721,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ keeps your saves, its runtimes and your Windows games’ environments here, on this Mac."
+            "value": "%1$@ keeps your saves and its runtimes here, on this Mac."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ y garde vos sauvegardes, ses runtimes et les environnements de vos jeux Windows, sur ce Mac."
+            "value": "%1$@ garde ici, sur ce Mac, vos sauvegardes et ses runtimes."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ tiene qui i tuoi salvataggi, i suoi runtime e gli ambienti dei tuoi giochi Windows, su questo Mac."
+            "value": "%1$@ tiene qui, su questo Mac, i tuoi salvataggi e i suoi runtime."
           }
         }
       }
@@ -21041,6 +21041,466 @@
           "stringUnit": {
             "state": "translated",
             "value": "Il suo disco non è collegato: i suoi giochi risultano non installati finché non torna."
+          }
+        }
+      }
+    },
+    "ui.prefixes.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows environments"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Environnements Windows"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ambienti Windows"
+          }
+        }
+      }
+    },
+    "ui.prefixes.description": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Where Wine keeps each Windows game’s environment and saves."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Où Wine garde l’environnement et les sauvegardes de chaque jeu Windows."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dove Wine tiene l'ambiente e i salvataggi di ogni gioco Windows."
+          }
+        }
+      }
+    },
+    "ui.prefixes.size": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ used"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ utilisés"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ occupati"
+          }
+        }
+      }
+    },
+    "ui.prefixes.choose": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose Another Folder…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisir un autre dossier…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scegli un'altra cartella…"
+          }
+        }
+      }
+    },
+    "ui.prefixes.back": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move Back to This Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ramener sur ce Mac"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Riporta su questo Mac"
+          }
+        }
+      }
+    },
+    "ui.prefixes.moving": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moving…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déplacement…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spostamento…"
+          }
+        }
+      }
+    },
+    "ui.prefixes.move": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déplacer"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sposta"
+          }
+        }
+      }
+    },
+    "ui.prefixes.move_title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move the Windows environments to “%1$@”?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déplacer les environnements Windows vers « %1$@ » ?"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spostare gli ambienti Windows su «%1$@»?"
+          }
+        }
+      }
+    },
+    "ui.prefixes.move_title_mac": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move the Windows environments back to this Mac?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ramener les environnements Windows sur ce Mac ?"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Riportare gli ambienti Windows su questo Mac?"
+          }
+        }
+      }
+    },
+    "ui.prefixes.move_message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ move there. Windows games can’t start until it is done, and nothing moves while a game runs."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ y sont déplacés. Les jeux Windows ne peuvent pas démarrer avant la fin, et rien ne bouge tant qu’un jeu tourne."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ vengono spostati lì. I giochi Windows non possono partire finché non è finito, e non si sposta niente mentre un gioco è in esecuzione."
+          }
+        }
+      }
+    },
+    "ui.prefixes.disconnected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Its disk is not connected: Windows games can’t start until it comes back."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Son disque n’est pas connecté : les jeux Windows ne peuvent pas démarrer avant son retour."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il suo disco non è collegato: i giochi Windows non possono partire finché non torna."
+          }
+        }
+      }
+    },
+    "ui.prefixes.format": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%1$@” is formatted as %2$@. Windows environments need a disk formatted as APFS, which keeps the links Wine uses."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "« %1$@ » est formaté en %2$@. Les environnements Windows demandent un disque formaté en APFS, qui garde les liens qu’utilise Wine."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«%1$@» è formattato in %2$@. Gli ambienti Windows richiedono un disco formattato in APFS, che mantiene i link usati da Wine."
+          }
+        }
+      }
+    },
+    "ui.prefixes.shared_title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share one Windows environment"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partager un environnement Windows"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Condividi un solo ambiente Windows"
+          }
+        }
+      }
+    },
+    "ui.prefixes.shared_description": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Games that have no environment yet share one per engine, instead of each making its own: it saves 250 MB to 1 GB per game and speeds up their first launch. Games that already have one keep it."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les jeux qui n’ont pas encore d’environnement en partagent un par moteur, au lieu d’en faire un chacun : cela économise 250 Mo à 1 Go par jeu et accélère leur premier lancement. Les jeux qui en ont déjà un le gardent."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I giochi che non hanno ancora un ambiente ne condividono uno per motore, invece di crearne uno ciascuno: si risparmiano da 250 MB a 1 GB per gioco e il primo avvio è più veloce. I giochi che ne hanno già uno lo tengono."
+          }
+        }
+      }
+    },
+    "model.prefixes.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not move the Windows environments: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de déplacer les environnements Windows : %@"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossibile spostare gli ambienti Windows: %@"
+          }
+        }
+      }
+    },
+    "model.prefixes.busy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A game is running, or they are already moving. Try again when it is done."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un jeu tourne, ou ils sont déjà en cours de déplacement. Réessayez quand ce sera fini."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un gioco è in esecuzione, oppure sono già in spostamento. Riprova quando sarà finito."
+          }
+        }
+      }
+    },
+    "model.prefixes.missing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This folder no longer exists."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce dossier n’existe plus."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Questa cartella non esiste più."
+          }
+        }
+      }
+    },
+    "model.prefixes.inside": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a folder outside Obelisk’s own folders and outside the current one."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisissez un dossier hors des dossiers d’Obelisk et hors du dossier actuel."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scegli una cartella fuori dalle cartelle di Obelisk e fuori da quella attuale."
+          }
+        }
+      }
+    },
+    "model.prefixes.occupied": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An environment of the same name is already in that folder."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un environnement du même nom est déjà dans ce dossier."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nella cartella c'è già un ambiente con lo stesso nome."
+          }
+        }
+      }
+    },
+    "backend.runtime.prefixesUnavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Windows environments are moving, or their disk is not connected. Connect it, or wait until they have moved."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les environnements Windows sont en cours de déplacement, ou leur disque n’est pas connecté. Connectez-le, ou attendez la fin du déplacement."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gli ambienti Windows sono in spostamento, oppure il loro disco non è collegato. Collegalo, oppure attendi la fine dello spostamento."
           }
         }
       }

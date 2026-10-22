@@ -13,6 +13,7 @@ mod locations;
 pub mod metal_hud;
 mod native;
 pub mod package;
+pub mod prefixes;
 mod process;
 pub mod profile;
 pub mod protocol;
@@ -139,6 +140,9 @@ pub enum Error {
     ApiMissing,
     #[error("backend.runtime.wineUnavailable")]
     WineUnavailable,
+    /// The Windows games' prefixes are moving, or their disk is not connected.
+    #[error("backend.runtime.prefixesUnavailable")]
+    PrefixesUnavailable,
 }
 impl From<std::io::Error> for Error {
     fn from(_: std::io::Error) -> Self {

@@ -30,6 +30,7 @@ final class AppModel {
     let downloads: DownloadsModel
     /// Where Obelisk installs games, which the player may change.
     let gamesFolder: GamesFolderModel
+    let prefixes: PrefixesModel
     /// The storefront's store, open over the whole window.
     var presentedStore: StorePresentation?
     /// The bug report being written, open over the whole window.
@@ -87,7 +88,7 @@ final class AppModel {
     init(directory: URL = AppIdentity.libraryDirectory, defaults: UserDefaults = .standard,
          defaultsDomain: String = Bundle.main.bundleIdentifier ?? AppIdentity.storageIdentifier, steam: SteamModel? = nil,
          epic: EpicModel? = nil, gog: GogModel? = nil, downloads: DownloadsModel? = nil,
-         gamesFolder: GamesFolderModel? = nil,
+         gamesFolder: GamesFolderModel? = nil, prefixes: PrefixesModel? = nil,
          performance: PerformanceReports? = nil, estimates: PerformanceEstimates? = nil, updates: AppUpdates? = nil,
          overlay: GameOverlayEnvironment = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil
             ? .live : .inert) {
@@ -109,6 +110,7 @@ final class AppModel {
         self.steam.notifier = overlay.notifier
         self.downloads = downloads ?? DownloadsModel()
         self.gamesFolder = gamesFolder ?? GamesFolderModel(library: directory)
+        self.prefixes = prefixes ?? PrefixesModel(library: directory)
         let performance = performance ?? PerformanceReports(isEnabled: sharesGamePerformance)
         performance.isEnabled = sharesGamePerformance
         self.performance = performance
@@ -117,6 +119,11 @@ final class AppModel {
         self.downloads.progress = { [weak self] item in self?.downloadTransfer(item) }
         applyAutomaticUpdates()
         reportPerformance()
+        self.prefixes.isRunning = { [weak self] in
+            guard let self else { return false }
+            return self.steam.gameSessions.active != nil || self.epic.gameSessions.active != nil
+                || self.gog.gameSessions.active != nil
+        }
         placeGames(self.steam.installations)
         placeGames(self.epic.installations)
         placeGames(self.gog.installations)

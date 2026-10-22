@@ -117,7 +117,7 @@ mod tests {
         assert_eq!(runtime.home, Path::new("/home"));
         assert_eq!(
             game_runtime::wine::prefix(
-                &runtime.wine_prefixes,
+                &runtime,
                 Path::new("/library/Games/Steam/steam-42-windows")
             )
             .unwrap(),

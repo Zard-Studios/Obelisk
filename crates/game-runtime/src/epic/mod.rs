@@ -46,6 +46,8 @@ pub enum Error {
     RosettaUnavailable,
     #[error("backend.runtime.wineUnavailable")]
     WineUnavailable,
+    #[error("backend.runtime.prefixesUnavailable")]
+    PrefixesUnavailable,
     #[error("{0}")]
     Epic(#[from] epic_kit::EpicError),
     #[error("backend.epic.cloud.storage")]

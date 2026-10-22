@@ -227,3 +227,84 @@ final class GamesFolderModelTests: XCTestCase {
     }
 
 }
+
+
+/// The Windows environments the test publishes, which records the player's changes.
+@MainActor
+final class FakePrefixes: PrefixesBackend {
+    enum Call: Equatable {
+        case shared(Bool), choose(String, running: Bool), chooseDefault(running: Bool)
+    }
+
+    private(set) var calls: [Call] = []
+    var current = PrefixesState(path: "/library/Prefixes", isDefault: true, shared: false, isConnected: true)
+    var bytes: UInt64 = 100
+    var failure: Error?
+
+    func state() -> PrefixesState { current }
+    func size() async -> UInt64 { bytes }
+
+    func setShared(_ shared: Bool) throws {
+        calls.append(.shared(shared))
+        current = PrefixesState(path: current.path, isDefault: current.isDefault, shared: shared,
+                                isConnected: current.isConnected)
+    }
+
+    func choose(_ chosen: String, running: Bool) async throws {
+        calls.append(.choose(chosen, running: running))
+        if let failure { throw failure }
+    }
+
+    func chooseDefault(running: Bool) async throws {
+        calls.append(.chooseDefault(running: running))
+        if let failure { throw failure }
+    }
+}
+
+@MainActor
+final class PrefixesModelTests: XCTestCase {
+    func testSharingAnEnvironmentReachesRustAndShows() {
+        let backend = FakePrefixes()
+        let model = PrefixesModel(library: FileManager.default.temporaryDirectory, backend: backend)
+        XCTAssertFalse(model.isShared)
+        model.setShared(true)
+        XCTAssertTrue(model.isShared)
+        XCTAssertEqual(backend.calls, [.shared(true)])
+    }
+
+    func testTheMoveWaitsForTheCountAndTheAgreementAndNeverRunsWhileAGameDoes() async throws {
+        let backend = FakePrefixes()
+        let model = PrefixesModel(library: FileManager.default.temporaryDirectory, backend: backend)
+        let folder = FileManager.default.temporaryDirectory
+        model.propose(folder)
+        try await eventually { model.proposal != nil }
+        XCTAssertEqual(model.proposal?.bytes, 100)
+        XCTAssertEqual(backend.calls, [], "nothing moves before the player agrees")
+
+        model.isRunning = { true }
+        model.confirm()
+        try await eventually { backend.calls.count == 1 && !model.isMoving }
+        XCTAssertEqual(backend.calls, [.choose(folder.path, running: true)], "Rust refuses it while a game runs")
+
+        // Back to this Mac asks as well, and a failure shows its reason.
+        model.proposeDefault()
+        try await eventually { model.proposal != nil }
+        XCTAssertNil(model.proposal?.chosen)
+        backend.failure = GameSessionError.Failure(reason: "model.prefixes.busy")
+        model.isRunning = { false }
+        model.confirm()
+        try await eventually { backend.calls.count == 2 && !model.isMoving }
+        XCTAssertEqual(backend.calls.last, .chooseDefault(running: false))
+        XCTAssertNotNil(model.failure)
+    }
+
+    func testAMoveToTooSmallADiskIsRefusedBeforeItAsks() async throws {
+        let backend = FakePrefixes()
+        backend.bytes = UInt64.max / 2
+        let model = PrefixesModel(library: FileManager.default.temporaryDirectory, backend: backend)
+        model.propose(FileManager.default.temporaryDirectory)
+        try await eventually { model.failure != nil }
+        XCTAssertNil(model.proposal)
+        XCTAssertTrue(backend.calls.isEmpty)
+    }
+}
