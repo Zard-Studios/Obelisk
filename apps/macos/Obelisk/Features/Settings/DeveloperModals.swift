@@ -3,7 +3,8 @@ import AppKit
 import SwiftUI
 
 // Debug builds only, like everything in this file: Settings' Developer section
-// opens each modal Obelisk presents over made-up data, to check how it looks.
+// opens each modal Obelisk presents over made-up data, to check how it looks,
+// but for Voile's update, which shows Voile's latest release notes on GitHub.
 // Nothing here reaches Rust, a storefront account or getobelisk.app.
 
 /// A modal of Obelisk, and the states the gallery opens it in.
@@ -68,6 +69,17 @@ struct DeveloperModal: Identifiable {
                         $0.cloudFailure(storefront: "steam", title: SteamGames.cloudTitle,
                                         message: "backend.steam.cloud.network", busy: true)
                     },
+                ]),
+            DeveloperModal(
+                id: "voile-update", title: "Voile update",
+                detail: "Over the whole window, when a Windows game's launch finds a newer Voile release. "
+                    + "Shows the notes of Voile's latest releases on GitHub.",
+                symbol: "sailboat.fill",
+                variants: [
+                    Variant("Offered") { $0.voileUpdate() },
+                    Variant("Required") { $0.voileUpdate(required: true) },
+                    Variant("Several releases") { $0.voileUpdate(releases: 2) },
+                    Variant("No notes") { $0.voileUpdate(notes: false) },
                 ]),
             DeveloperModal(
                 id: "rosetta", title: "Rosetta",
@@ -232,6 +244,49 @@ final class DeveloperModals {
                                  readinessDelay: { try await Task.sleep(for: .seconds(3)) })
         model.connect(accountId: 0)
         present { _ in RosettaPromptView(model: model).interactiveDismissDisabled() }
+    }
+
+    /// Voile's latest `releases` on GitHub, newest first, offered as a game
+    /// that needs the newest would when `required`; without their notes
+    /// unless `notes`. A failed read shows as the notes.
+    func voileUpdate(required: Bool = false, releases count: Int = 1, notes: Bool = true) {
+        Task {
+            var releases: [VoileReleaseNotes]
+            do {
+                releases = try await Self.voileReleases(count)
+            } catch {
+                releases = [VoileReleaseNotes(version: "v?", notes: "**GitHub's releases could not be read:** "
+                                                + error.localizedDescription)]
+            }
+            if !notes { releases = releases.map { VoileReleaseNotes(version: $0.version, notes: "") } }
+            let offer = VoileUpdateOffer(version: releases[0].version, required: required, releases: releases)
+            present { close in VoileUpdateSheet(offer: offer) { _ in close() } }
+        }
+    }
+
+    /// Voile's latest `count` runtime releases on GitHub, newest first, with
+    /// their notes as GitHub keeps them: the releases Voile's feed offers,
+    /// whose tags read v26.3.0-17, not the archives its build pins.
+    nonisolated static func voileReleases(_ count: Int) async throws -> [VoileReleaseNotes] {
+        struct Release: Decodable {
+            let tagName: String
+            let body: String?
+            let draft: Bool
+        }
+        var request = URLRequest(url: URL(string: "https://api.github.com/repos/Zagrios/Voile/releases?per_page=30")!,
+                                 timeoutInterval: 20)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else { throw DeveloperModalFailure("GitHub answered \(status).") }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let releases = try decoder.decode([Release].self, from: data)
+            .filter { !$0.draft && $0.tagName.wholeMatch(of: /v\d+\.\d+\.\d+-\d+/) != nil }
+            .prefix(count)
+            .map { VoileReleaseNotes(version: $0.tagName, notes: ($0.body ?? "").replacingOccurrences(of: "\r", with: "")) }
+        guard !releases.isEmpty else { throw DeveloperModalFailure("Voile has no runtime release on GitHub.") }
+        return Array(releases)
     }
 
     /// `answer` is the HTTP status getobelisk.app answers with: 201 gives the

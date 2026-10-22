@@ -201,6 +201,8 @@ final class GameSessions<Store: GameStorefront> {
         var observed: Bool
         /// Which runtime downloads while the launch waits for it, and how much.
         var runtimeInstall: RuntimeInstallState?
+        /// The newer Voile release the launch waits for the player to take or skip.
+        var voileUpdate: VoileUpdateOffer?
         /// When this Obelisk saw the game start, even if it already exited. A
         /// game recovered running started before, and has none.
         var startedAt: Date?
@@ -224,6 +226,7 @@ final class GameSessions<Store: GameStorefront> {
             microTxn = state.microTxn
             observed = state.observed
             runtimeInstall = state.runtimeInstall
+            voileUpdate = state.voileUpdate
             startedAt = state.startedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) }
             played = state.played
         }
@@ -372,6 +375,17 @@ final class GameSessions<Store: GameStorefront> {
         guard rosettaPrompt(accountId: prompt.accountId) == prompt else { return }
         core.declineRosetta(sessionId: prompt.id, account: Store.account(prompt.accountId),
                             decisionId: prompt.decisionId)
+        apply(core.state())
+    }
+
+    /// The newer Voile release the active launch waits for the player to take or skip.
+    var voileUpdate: VoileUpdateOffer? { active?.voileUpdate }
+
+    /// The player's answer to `voileUpdate`: Cancel stops the launch.
+    func answerVoileUpdate(_ answer: VoileUpdateAnswer) {
+        guard let active, active.voileUpdate != nil else { return }
+        // A refused answer finds the launch gone, or a release its game needs.
+        try? core.answerVoileUpdate(sessionId: active.id, answer: answer)
         apply(core.state())
     }
 

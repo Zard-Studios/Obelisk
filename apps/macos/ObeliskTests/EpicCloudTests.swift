@@ -218,6 +218,29 @@ final class EpicCloudTests: XCTestCase {
         try await eventually { app.presentedPrompt == nil }
     }
 
+    func testANewerVoileReleaseAsksOverTheWholeAppUntilThePlayerAnswers() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "ObeliskEpicVoileTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sessions = EpicGameSessions()
+        let app = AppModel(directory: directory, steam: SteamModel(directory: directory, gameSessions: SteamGameSessions()),
+                           epic: EpicModel(directory: directory, gameSessions: sessions))
+        app.selection = .steam
+        var launch = GameSessionState.epic(account: "account", phase: .preparing, observed: false)
+        launch.voileUpdate = VoileUpdateOffer(version: "v26.3.0-17", required: false, releases: [
+            VoileReleaseNotes(version: "v26.3.0-17", notes: "### Fixes\n\n- Fewer crashes"),
+        ])
+
+        sessions.fake.show(launch)
+
+        try await eventually { app.presentedPrompt == .epicVoile }
+        XCTAssertEqual(sessions.voileUpdate?.version, "v26.3.0-17")
+        sessions.answerVoileUpdate(.skip)
+        XCTAssertEqual(sessions.fake.voileAnswers, [.skip])
+        try await eventually { app.presentedPrompt == nil }
+        sessions.answerVoileUpdate(.update)
+        XCTAssertEqual(sessions.fake.voileAnswers, [.skip], "answered once")
+    }
+
     func testEpicRosettaUsesSharedInstallationAndWaitsForSupervisorReadiness() async throws {
         let sessions = EpicGameSessions()
         sessions.fake.failNextRosettaResumes(2)

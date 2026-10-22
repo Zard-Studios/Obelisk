@@ -31,6 +31,11 @@ fn rocket_league_fall_guys_and_elden_ring_run_on_the_linux_engine_and_nothing_el
         Some("start_protected_game.exe")
     );
     assert_eq!(by_id(FALL_GUYS).minimum_voile, Some("v26.3.0-16"));
+    let rocket_league_on_steam = by_id(Game::Steam { app_id: 252950 });
+    assert_eq!(rocket_league_on_steam.engine, Engine::Linux);
+    assert_eq!(rocket_league_on_steam.graphics, Graphics::Dxmt);
+    assert_eq!(rocket_league_on_steam.executable, None);
+    assert_eq!(rocket_league_on_steam.minimum_voile, Some("v26.3.0-18"));
     assert_eq!(by_id(Game::Steam { app_id: 1245620 }).engine, Engine::Linux);
     for other in [
         Game::Epic {
@@ -41,7 +46,7 @@ fn rocket_league_fall_guys_and_elden_ring_run_on_the_linux_engine_and_nothing_el
             namespace: "5a6d34ba28bc45d081d9311c3885feef",
             app_name: "Sugar",
         },
-        Game::Steam { app_id: 252950 },
+        Game::Steam { app_id: 1172470 },
         Game::Gog {
             product_id: "1245620",
         },
@@ -309,6 +314,7 @@ fn the_named_games_are_the_ones_the_table_names_by_a_storefront_s_id() {
 
     assert!(named.contains(&Game::Steam { app_id: 1245620 }));
     assert!(named.contains(&Game::Steam { app_id: 377160 }));
-    assert!(!named.contains(&Game::Steam { app_id: 252950 }));
+    assert!(named.contains(&Game::Steam { app_id: 252950 }));
+    assert!(!named.contains(&Game::Steam { app_id: 1172470 }));
     assert!(named.contains(&ROCKET_LEAGUE));
 }

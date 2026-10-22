@@ -4,7 +4,7 @@
 use crate::{ObeliskLocations, SteamHostState, steam_chat::SteamGameInvite};
 use game_runtime::{
     Locations, cloud, epic, gog, protocol,
-    runtimes::{self, Runtimes},
+    runtimes::{self, Answer, Runtimes},
     sessions::{self, Failure, Sessions, Storefront, Supervised},
     steam, supervisor,
 };
@@ -61,6 +61,66 @@ impl From<sessions::RuntimeInstall> for RuntimeInstallState {
         Self {
             component: install.runtime.into(),
             fraction: install.fraction,
+        }
+    }
+}
+
+/// A newer Voile release a launch offers before its game starts, which the
+/// player answers with `StorefrontSessions::answer_voile_update`.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct VoileUpdateOffer {
+    /// The release offered.
+    pub version: String,
+    /// The game needs it: the player takes it, or the launch stops.
+    pub required: bool,
+    /// What each release newer than the one in place brings, up to the one
+    /// offered, newest first.
+    pub releases: Vec<VoileReleaseNotes>,
+}
+impl From<runtimes::Update> for VoileUpdateOffer {
+    fn from(update: runtimes::Update) -> Self {
+        Self {
+            version: update.version,
+            required: update.required,
+            releases: update.releases.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// What a Voile release brings.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct VoileReleaseNotes {
+    pub version: String,
+    /// In Markdown, as its GitHub release tells it; empty when Voile's feed
+    /// has none for it.
+    pub notes: String,
+}
+impl From<game_runtime::voile::Notes> for VoileReleaseNotes {
+    fn from(notes: game_runtime::voile::Notes) -> Self {
+        Self {
+            version: notes.version,
+            notes: notes.notes,
+        }
+    }
+}
+
+/// The player's answer to a newer Voile release a launch offers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum VoileUpdateAnswer {
+    /// Download it, then start the game in it.
+    Update,
+    /// Start the game in the release in place; refused for a release the
+    /// game needs.
+    Skip,
+    /// Stop the launch.
+    Cancel,
+}
+impl From<VoileUpdateAnswer> for Answer {
+    fn from(answer: VoileUpdateAnswer) -> Self {
+        match answer {
+            VoileUpdateAnswer::Update => Self::Update,
+            VoileUpdateAnswer::Skip => Self::Skip,
+            VoileUpdateAnswer::Cancel => Self::Cancel,
         }
     }
 }
@@ -457,6 +517,10 @@ pub struct GameSessionState {
     pub observed: bool,
     /// How much of a runtime has downloaded while the launch waits for it.
     pub runtime_install: Option<RuntimeInstallState>,
+    /// The newer Voile release the launch waits for the player to take or
+    /// skip.
+    #[uniffi(default = None)]
+    pub voile_update: Option<VoileUpdateOffer>,
     /// When this Obelisk saw the game start, in seconds since the Unix epoch,
     /// even if it already exited. A game recovered running has none.
     #[uniffi(default = None)]
@@ -573,6 +637,7 @@ fn session_state<P: Bridged>(session: sessions::Session<P>) -> GameSessionState 
         cloud: session.cloud.into(),
         observed: session.observed,
         runtime_install: session.runtime_install.map(Into::into),
+        voile_update: session.voile_update.map(Into::into),
         started_at: session.started_at,
         played: session.played.map(Into::into),
     }
@@ -868,6 +933,17 @@ impl StorefrontSessions {
     /// The player declined to install Rosetta: the waiting launch stops.
     pub fn decline_rosetta(&self, session_id: String, account: GameAccount, decision_id: u64) {
         each!(&*self.sessions, sessions => decline_rosetta(sessions, &session_id, account, decision_id))
+    }
+
+    /// The player's answer to the newer Voile release session `session_id`'s
+    /// launch offers.
+    pub fn answer_voile_update(
+        &self,
+        session_id: String,
+        answer: VoileUpdateAnswer,
+    ) -> Result<(), GameSessionError> {
+        each!(&*self.sessions, sessions => sessions.answer_voile_update(&session_id, answer.into()))
+            .map_err(Into::into)
     }
 }
 

@@ -515,9 +515,10 @@ fn files(mut reader: Reader<'_>) -> Result<Vec<ManifestFile>, EpicError> {
 }
 
 fn custom_fields(mut reader: Reader<'_>) -> Result<BTreeMap<String, String>, EpicError> {
-    if reader.byte()? != 0 {
-        return Err(EpicError::UnsupportedContent);
-    }
+    // Writers stamp this section with their latest chunk list version, whatever
+    // the manifest's feature level, but every version holds the same keys and
+    // values. Epic's reader skips what a later one may append; so does this one.
+    let version = reader.byte()?;
     let count = reader.count(8)?;
     let keys = (0..count)
         .map(|_| reader.string())
@@ -528,7 +529,9 @@ fn custom_fields(mut reader: Reader<'_>) -> Result<BTreeMap<String, String>, Epi
             return Err(EpicError::Protocol);
         }
     }
-    reader.finish()?;
+    if version <= 3 {
+        reader.finish()?;
+    }
     Ok(result)
 }
 
@@ -971,6 +974,22 @@ mod tests {
         result
     }
 
+    /// `body`'s first three sections, then custom fields stamped `version`
+    /// and followed by `appended`.
+    fn with_custom_fields(mut body: Vec<u8>, version: u8, appended: &[u8]) -> Vec<u8> {
+        let mut end = 0;
+        for _ in 0..3 {
+            end += u32::from_le_bytes(body[end..end + 4].try_into().unwrap()) as usize;
+        }
+        body.truncate(end);
+        let mut custom = 1_u32.to_le_bytes().to_vec();
+        custom.extend(string("platform"));
+        custom.extend(string("Windows"));
+        custom.extend(appended);
+        body.extend(section(version, custom));
+        body
+    }
+
     fn binary(body: &[u8], version: u32, compressed: bool) -> Vec<u8> {
         let payload = if compressed {
             let mut encoder =
@@ -1070,6 +1089,22 @@ mod tests {
             parse(&unknown),
             Err(EpicError::UnsupportedContent)
         ));
+    }
+
+    #[test]
+    fn custom_fields_read_alike_at_every_writer_version() {
+        // Dead by Daylight's build stamps them 3 over a version 0 chunk list.
+        for version in 0..=3 {
+            let bytes = binary(&with_custom_fields(body(21, 2, 2), version, &[]), 21, true);
+            assert_eq!(parse(&bytes).unwrap().custom_fields["platform"], "Windows");
+            let trailing = with_custom_fields(body(21, 2, 2), version, &[0]);
+            assert!(parse(&binary(&trailing, 21, true)).is_err());
+        }
+        let later = with_custom_fields(body(21, 2, 2), 4, &[1, 2, 3]);
+        assert_eq!(
+            parse(&binary(&later, 21, true)).unwrap().custom_fields["platform"],
+            "Windows"
+        );
     }
 
     #[test]

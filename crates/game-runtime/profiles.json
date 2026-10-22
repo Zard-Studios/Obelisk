@@ -13,6 +13,14 @@
       "executable": "Binaries/Win64/RocketLeague_EAC.exe"
     },
     {
+      "name": "Rocket League",
+      "note": "Its Steam build, which runs as its Epic one. Steam's launch already starts its Easy Anti-Cheat bootstrapper, RocketLeague_EAC.exe. It starts a Steam game server in its own process, which needs Voile v26.3.0-18: in older releases the Linux engine's steamclient.so took that server's threads for dead, and the game closed a second after the anti-cheat's splash.",
+      "steam": 252950,
+      "engine": "Linux",
+      "graphics": "Dxmt",
+      "minimum_voile": "v26.3.0-18"
+    },
+    {
       "name": "ELDEN RING",
       "note": "Easy Anti-Cheat, as Rocket League's. It only has Direct3D 12, which D3DMetal renders and DXMT does not. Steam's launch already starts its bootstrapper, start_protected_game.exe.",
       "steam": 1245620,
@@ -30,6 +38,17 @@
       "graphics": "Dxmt",
       "executable": "start_protected_game.exe",
       "minimum_voile": "v26.3.0-16"
+    },
+    {
+      "name": "Dead by Daylight",
+      "note": "Easy Anti-Cheat, as Rocket League's: it loads its Linux module on the Linux engine. Unreal renders it with Direct3D 11, through DXMT as Rocket League. Its launch executable, DeadByDaylight.exe, is already the Easy Anti-Cheat bootstrapper. It needs Voile v26.3.0-18: older Linux engines refused its 301st thread and it crashed at start, older Neptune cut its render target calls with a KEEP count short, leaving the screen black, and showed its 10-bit swapchain as 8-bit.",
+      "epic": {
+        "namespace": "611482b8586142cda48a0786eb8a127c",
+        "app_name": "Brill"
+      },
+      "engine": "Linux",
+      "graphics": "Dxmt",
+      "minimum_voile": "v26.3.0-18"
     },
     {
       "name": "Counter-Strike 2",

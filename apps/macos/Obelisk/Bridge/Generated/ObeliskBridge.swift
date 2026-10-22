@@ -5197,6 +5197,12 @@ public protocol StorefrontSessionsProtocol: AnyObject, Sendable {
     func acceptInvite(sessionId: String, friendSteamId: UInt64, invite: SteamGameInvite) async throws 
     
     /**
+     * The player's answer to the newer Voile release session `session_id`'s
+     * launch offers.
+     */
+    func answerVoileUpdate(sessionId: String, answer: VoileUpdateAnswer) throws 
+    
+    /**
      * The player's answer to `micro_txn`, the purchase session
      * `session_id`'s Steam game waits on: only that order is answered.
      */
@@ -5342,6 +5348,20 @@ open func acceptInvite(sessionId: String, friendSteamId: UInt64, invite: SteamGa
             liftFunc: { $0 },
             errorHandler: FfiConverterTypeGameSessionError_lift
         )
+}
+    
+    /**
+     * The player's answer to the newer Voile release session `session_id`'s
+     * launch offers.
+     */
+open func answerVoileUpdate(sessionId: String, answer: VoileUpdateAnswer)throws   {try rustCallWithError(FfiConverterTypeGameSessionError_lift) {
+        uniffiCallStatus in
+    uniffi_obelisk_bridge_fn_method_storefrontsessions_answer_voile_update(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(sessionId),
+        FfiConverterTypeVoileUpdateAnswer_lower(answer),uniffiCallStatus
+    )
+}
 }
     
     /**
@@ -7090,6 +7110,11 @@ public struct GameSessionState: Equatable, Hashable {
      */
     public var runtimeInstall: RuntimeInstallState?
     /**
+     * The newer Voile release the launch waits for the player to take or
+     * skip.
+     */
+    public var voileUpdate: VoileUpdateOffer?
+    /**
      * When this Obelisk saw the game start, in seconds since the Unix epoch,
      * even if it already exited. A game recovered running has none.
      */
@@ -7140,6 +7165,10 @@ public struct GameSessionState: Equatable, Hashable {
          * How much of a runtime has downloaded while the launch waits for it.
          */runtimeInstall: RuntimeInstallState?, 
         /**
+         * The newer Voile release the launch waits for the player to take or
+         * skip.
+         */voileUpdate: VoileUpdateOffer? = nil, 
+        /**
          * When this Obelisk saw the game start, in seconds since the Unix epoch,
          * even if it already exited. A game recovered running has none.
          */startedAt: UInt64? = nil, 
@@ -7174,6 +7203,7 @@ public struct GameSessionState: Equatable, Hashable {
         self.host = host
         self.observed = observed
         self.runtimeInstall = runtimeInstall
+        self.voileUpdate = voileUpdate
         self.startedAt = startedAt
         self.inviteRequest = inviteRequest
         self.lobbyId = lobbyId
@@ -7207,6 +7237,7 @@ public struct FfiConverterTypeGameSessionState: FfiConverterRustBuffer {
                 host: FfiConverterOptionTypeSteamHostState.read(from: &buf), 
                 observed: FfiConverterBool.read(from: &buf), 
                 runtimeInstall: FfiConverterOptionTypeRuntimeInstallState.read(from: &buf), 
+                voileUpdate: FfiConverterOptionTypeVoileUpdateOffer.read(from: &buf), 
                 startedAt: FfiConverterOptionUInt64.read(from: &buf), 
                 inviteRequest: FfiConverterOptionTypeSteamInviteRequest.read(from: &buf), 
                 lobbyId: FfiConverterOptionUInt64.read(from: &buf), 
@@ -7226,6 +7257,7 @@ public struct FfiConverterTypeGameSessionState: FfiConverterRustBuffer {
         FfiConverterOptionTypeSteamHostState.write(value.host, into: &buf)
         FfiConverterBool.write(value.observed, into: &buf)
         FfiConverterOptionTypeRuntimeInstallState.write(value.runtimeInstall, into: &buf)
+        FfiConverterOptionTypeVoileUpdateOffer.write(value.voileUpdate, into: &buf)
         FfiConverterOptionUInt64.write(value.startedAt, into: &buf)
         FfiConverterOptionTypeSteamInviteRequest.write(value.inviteRequest, into: &buf)
         FfiConverterOptionUInt64.write(value.lobbyId, into: &buf)
@@ -10986,6 +11018,153 @@ public func FfiConverterTypeStorefrontInfo_lower(_ value: StorefrontInfo) -> Rus
 }
 
 
+/**
+ * What a Voile release brings.
+ */
+public struct VoileReleaseNotes: Equatable, Hashable {
+    public var version: String
+    /**
+     * In Markdown, as its GitHub release tells it; empty when Voile's feed
+     * has none for it.
+     */
+    public var notes: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(version: String, 
+        /**
+         * In Markdown, as its GitHub release tells it; empty when Voile's feed
+         * has none for it.
+         */notes: String) {
+        self.version = version
+        self.notes = notes
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension VoileReleaseNotes: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeVoileReleaseNotes: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> VoileReleaseNotes {
+        return
+            try VoileReleaseNotes(
+                version: FfiConverterString.read(from: &buf), 
+                notes: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: VoileReleaseNotes, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.version, into: &buf)
+        FfiConverterString.write(value.notes, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoileReleaseNotes_lift(_ buf: RustBuffer) throws -> VoileReleaseNotes {
+    return try FfiConverterTypeVoileReleaseNotes.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoileReleaseNotes_lower(_ value: VoileReleaseNotes) -> RustBuffer {
+    return FfiConverterTypeVoileReleaseNotes.lower(value)
+}
+
+
+/**
+ * A newer Voile release a launch offers before its game starts, which the
+ * player answers with `StorefrontSessions::answer_voile_update`.
+ */
+public struct VoileUpdateOffer: Equatable, Hashable {
+    /**
+     * The release offered.
+     */
+    public var version: String
+    /**
+     * The game needs it: the player takes it, or the launch stops.
+     */
+    public var required: Bool
+    /**
+     * What each release newer than the one in place brings, up to the one
+     * offered, newest first.
+     */
+    public var releases: [VoileReleaseNotes]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The release offered.
+         */version: String, 
+        /**
+         * The game needs it: the player takes it, or the launch stops.
+         */required: Bool, 
+        /**
+         * What each release newer than the one in place brings, up to the one
+         * offered, newest first.
+         */releases: [VoileReleaseNotes]) {
+        self.version = version
+        self.required = required
+        self.releases = releases
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension VoileUpdateOffer: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeVoileUpdateOffer: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> VoileUpdateOffer {
+        return
+            try VoileUpdateOffer(
+                version: FfiConverterString.read(from: &buf), 
+                required: FfiConverterBool.read(from: &buf), 
+                releases: FfiConverterSequenceTypeVoileReleaseNotes.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: VoileUpdateOffer, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.version, into: &buf)
+        FfiConverterBool.write(value.required, into: &buf)
+        FfiConverterSequenceTypeVoileReleaseNotes.write(value.releases, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoileUpdateOffer_lift(_ buf: RustBuffer) throws -> VoileUpdateOffer {
+    return try FfiConverterTypeVoileUpdateOffer.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoileUpdateOffer_lower(_ value: VoileUpdateOffer) -> RustBuffer {
+    return FfiConverterTypeVoileUpdateOffer.lower(value)
+}
+
+
 
 public enum CloudChoice: Equatable, Hashable {
     
@@ -14530,6 +14709,92 @@ public func FfiConverterTypeTransferState_lower(_ value: TransferState) -> RustB
 }
 
 
+
+/**
+ * The player's answer to a newer Voile release a launch offers.
+ */
+
+public enum VoileUpdateAnswer: Equatable, Hashable {
+    
+    /**
+     * Download it, then start the game in it.
+     */
+    case update
+    /**
+     * Start the game in the release in place; refused for a release the
+     * game needs.
+     */
+    case skip
+    /**
+     * Stop the launch.
+     */
+    case cancel
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension VoileUpdateAnswer: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeVoileUpdateAnswer: FfiConverterRustBuffer {
+    typealias SwiftType = VoileUpdateAnswer
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> VoileUpdateAnswer {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .update
+        
+        case 2: return .skip
+        
+        case 3: return .cancel
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: VoileUpdateAnswer, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .update:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .skip:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .cancel:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoileUpdateAnswer_lift(_ buf: RustBuffer) throws -> VoileUpdateAnswer {
+    return try FfiConverterTypeVoileUpdateAnswer.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoileUpdateAnswer_lower(_ value: VoileUpdateAnswer) -> RustBuffer {
+    return FfiConverterTypeVoileUpdateAnswer.lower(value)
+}
+
+
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -15149,6 +15414,30 @@ fileprivate struct FfiConverterOptionTypeSteamOverlayRequest: FfiConverterRustBu
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeSteamOverlayRequest.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeVoileUpdateOffer: FfiConverterRustBuffer {
+    typealias SwiftType = VoileUpdateOffer?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeVoileUpdateOffer.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeVoileUpdateOffer.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -16051,6 +16340,31 @@ fileprivate struct FfiConverterSequenceTypeStorefrontInfo: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeVoileReleaseNotes: FfiConverterRustBuffer {
+    typealias SwiftType = [VoileReleaseNotes]
+
+    public static func write(_ value: [VoileReleaseNotes], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeVoileReleaseNotes.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [VoileReleaseNotes] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [VoileReleaseNotes]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeVoileReleaseNotes.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeCloudChoice: FfiConverterRustBuffer {
     typealias SwiftType = [CloudChoice]
 
@@ -16580,6 +16894,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_storefrontsessions_accept_invite() != 8710) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_obelisk_bridge_checksum_method_storefrontsessions_answer_voile_update() != 13257) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_obelisk_bridge_checksum_method_storefrontsessions_authorize_micro_txn() != 4946) {

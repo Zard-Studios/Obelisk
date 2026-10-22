@@ -76,18 +76,30 @@ struct RootView: View {
 
     @ViewBuilder private var prompt: some View {
         switch model.presentedPrompt {
+        case .steamVoile:
+            voileUpdate(model.steam.gameSessions)
         case .steamRosetta:
             RosettaPromptView(model: model.steam.rosetta)
         case .steamCloud:
             CloudQuestionSheet(model: model.steam)
         case .epicRosetta:
             RosettaPromptView(model: model.epic.rosetta, storefront: "epic")
+        case .epicVoile:
+            voileUpdate(model.epic.gameSessions)
         case .epicCloud:
             CloudQuestionSheet(model: model.epic)
+        case .gogVoile:
+            voileUpdate(model.gog.gameSessions)
         case .gogRosetta:
             RosettaPromptView(model: model.gog.rosetta, storefront: "gog")
         case nil:
             EmptyView()
+        }
+    }
+
+    @ViewBuilder private func voileUpdate<Store>(_ sessions: GameSessions<Store>) -> some View {
+        if let offer = sessions.voileUpdate {
+            VoileUpdateSheet(offer: offer, answer: sessions.answerVoileUpdate)
         }
     }
 }

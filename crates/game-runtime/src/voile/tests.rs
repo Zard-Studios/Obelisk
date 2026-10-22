@@ -72,6 +72,11 @@ fn offered(version: &str, contract: u32, withdrawn: Option<&str>) -> String {
     )
 }
 
+/// A release a feed offers, of the first contract, which brings `notes`.
+fn noted(version: &str, notes: &str) -> String {
+    offered(version, 1, None).replacen('{', &format!(r#"{{"notes": "{notes}", "#), 1)
+}
+
 #[test]
 fn the_checked_in_release_names_its_archive_and_obelisk_s_contract() {
     let release = release();
@@ -170,26 +175,36 @@ fn the_release_wanted_is_the_newest_the_feed_offers_for_obelisk_s_contract() {
     assert_eq!(wanted.url, "https://example.invalid/voile-v1.0.0-3.tar.xz");
 }
 
+/// Whether a launch in `root`, of a game that needs `minimum` or a newer
+/// release, asks about a newer one, and must take it: `None` when it does
+/// not ask.
+fn asks(root: &Path, minimum: Option<&str>) -> Option<bool> {
+    match standing(root, minimum) {
+        Standing::Outdated(update) => Some(update.required),
+        _ => None,
+    }
+}
+
 #[test]
-fn a_launch_waits_for_a_missing_release_and_lets_an_outdated_one_run() {
+fn a_launch_waits_for_a_missing_release_and_asks_about_a_newer_one() {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path();
     feed(root, &offered("v1.0.0-3", 1, None));
     assert_eq!(standing(root, None), Standing::Missing);
 
     lay(root, "v1.0.0-2", r#"{"version": "v1.0.0-2"}"#);
-    assert_eq!(standing(root, None), Standing::Outdated);
+    assert_eq!(asks(root, None), Some(false));
     assert_eq!(
-        standing(root, Some("v1.0.0-3")),
-        Standing::Missing,
+        asks(root, Some("v1.0.0-3")),
+        Some(true),
         "the game needs the release offered"
     );
     assert_eq!(
-        standing(root, Some("v1.0.0-9")),
-        Standing::Outdated,
+        asks(root, Some("v1.0.0-9")),
+        Some(false),
         "no release offered is enough: the game runs in the newest it can"
     );
-    assert_eq!(standing(root, Some("v1.0.0-2")), Standing::Outdated);
+    assert_eq!(asks(root, Some("v1.0.0-2")), Some(false));
 
     lay(root, "v1.0.0-3", r#"{"version": "v1.0.0-3"}"#);
     assert_eq!(standing(root, Some("v1.0.0-3")), Standing::Current);
@@ -198,6 +213,41 @@ fn a_launch_waits_for_a_missing_release_and_lets_an_outdated_one_run() {
     fs::write(root.join("current/bin/wine"), "wine").unwrap();
     feed(root, &offered("v1.0.0-4", 1, None));
     assert_eq!(standing(root, Some("v1.0.0-4")), Standing::Current);
+}
+
+#[test]
+fn a_launch_offers_what_each_release_newer_than_the_one_in_place_brings() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    lay(root, "v1.0.0-2", r#"{"version": "v1.0.0-2"}"#);
+    feed(
+        root,
+        &[
+            offered("v1.0.0-6", 2, None),
+            offered("v1.0.0-5", 1, Some("breaks a game")),
+            noted("v1.0.0-4", "### Fixes\\n\\n- Fewer crashes"),
+            offered("v1.0.0-3", 1, None),
+            noted("v1.0.0-2", "Already in place"),
+            noted("v1.0.0-1", "Older"),
+        ]
+        .join(","),
+    );
+
+    let notes = |version: &str, notes: &str| Notes {
+        version: version.into(),
+        notes: notes.into(),
+    };
+    assert_eq!(
+        standing(root, None),
+        Standing::Outdated(Update {
+            version: "v1.0.0-4".into(),
+            required: false,
+            releases: vec![
+                notes("v1.0.0-4", "### Fixes\n\n- Fewer crashes"),
+                notes("v1.0.0-3", ""),
+            ],
+        })
+    );
 }
 
 #[tokio::test]

@@ -263,17 +263,20 @@ final class AppModel {
         gog.installations.updatesAutomatically = updatesGamesAutomatically
     }
 
-    /// The Cloud or Rosetta question shown over the whole app, whichever tab is
-    /// open. One sheet at a time, in a fixed order.
+    /// The newer Voile release, Cloud or Rosetta question shown over the whole
+    /// app, whichever tab is open. One sheet at a time, in a fixed order.
     enum StorefrontPrompt: Equatable {
-        case steamRosetta, steamCloud, epicRosetta, epicCloud, gogRosetta
+        case steamVoile, steamRosetta, steamCloud, epicVoile, epicRosetta, epicCloud, gogVoile, gogRosetta
     }
 
     var presentedPrompt: StorefrontPrompt? {
+        if steam.gameSessions.voileUpdate != nil { return .steamVoile }
         if steam.rosetta.prompt != nil { return .steamRosetta }
         if steam.cloud.question != nil { return .steamCloud }
+        if epic.gameSessions.voileUpdate != nil { return .epicVoile }
         if epic.rosetta.prompt != nil { return .epicRosetta }
         if epic.cloud.question != nil { return .epicCloud }
+        if gog.gameSessions.voileUpdate != nil { return .gogVoile }
         if gog.rosetta.prompt != nil { return .gogRosetta }
         return nil
     }

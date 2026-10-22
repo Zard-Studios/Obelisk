@@ -41,6 +41,7 @@ fn obelisk_reads_the_releases_of_a_feed_of_its_format() {
                 size: 3,
                 sha256: "a3c2e7b9b0f2f5e8c4d1e6a7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f7081".into(),
             },
+            notes: String::new(),
             withdrawn: None,
         }]
     );

@@ -6,6 +6,7 @@ use std::sync::{
     Mutex,
     atomic::{AtomicBool, Ordering},
 };
+use tokio::sync::oneshot;
 
 /// What `FakeRuntimes` does, shared with each of its downloads.
 struct FakeRuntime {
@@ -22,7 +23,8 @@ struct FakeRuntime {
 
 /// Runtimes a test stands in for. Those `present` are in place, and those
 /// `outdate` names are in place while a newer release is offered, which a
-/// game that needs a newer release cannot run in. A download of another
+/// game that needs a newer release cannot run in; the offer is
+/// `fake_offer`. A download of another
 /// records its name through `record`, then waits once `hold` is called until
 /// it is cancelled or `release` lets it go on, then fails as `fail` says, or
 /// else puts the newest release of its runtime in place. Reading the feed
@@ -44,7 +46,7 @@ impl FakeRuntimes {
         }))))
     }
     /// `runtime` is in place, and a newer release of it is offered.
-    fn outdate(&self, runtime: Runtime) {
+    pub(crate) fn outdate(&self, runtime: Runtime) {
         self.0.lock().unwrap().outdated.push(runtime);
     }
     pub(crate) fn fail(&self, failure: Failure) {
@@ -84,8 +86,7 @@ impl RuntimeSource for FakeRuntimes {
     fn standing(&self, runtime: Runtime, voile: Option<&str>) -> Standing {
         let state = self.0.lock().unwrap();
         match (state.outdated.contains(&runtime), voile) {
-            (true, Some(_)) => Standing::Missing,
-            (true, None) => Standing::Outdated,
+            (true, voile) => Standing::Outdated(fake_offer(voile.is_some())),
             _ if state.present.contains(&runtime) => Standing::Current,
             _ => Standing::Missing,
         }
@@ -143,6 +144,11 @@ impl RuntimeDownload for FakeDownload {
             Ok(())
         })
     }
+}
+
+/// The question of a launch that finds nothing newer to offer.
+fn never_asked(update: Update) -> oneshot::Receiver<Answer> {
+    panic!("nothing newer to offer, yet {update:?} was")
 }
 
 pub(crate) fn recorded() -> (
@@ -293,7 +299,7 @@ async fn a_launch_removes_the_replaced_voile_releases_once_no_game_may_run_from_
         let runtimes = runtimes.clone();
         async move {
             runtimes
-                .get_for_launch::<Epic>(platform, None, &CancelToken::new(), |_| {})
+                .get_for_launch::<Epic>(platform, None, &CancelToken::new(), |_| {}, never_asked)
                 .await
                 .unwrap()
         }
@@ -323,12 +329,18 @@ async fn a_failed_or_cancelled_launch_removes_nothing() {
     let runtimes = Runtimes::from_source(fake);
 
     let failed = runtimes
-        .get_for_launch::<Gog>(Platform::Windows, None, &CancelToken::new(), |_| {})
+        .get_for_launch::<Gog>(
+            Platform::Windows,
+            None,
+            &CancelToken::new(),
+            |_| {},
+            never_asked,
+        )
         .await;
     let cancel = CancelToken::new();
     cancel.cancel();
     let cancelled = runtimes
-        .get_for_launch::<Gog>(Platform::Windows, None, &cancel, |_| {})
+        .get_for_launch::<Gog>(Platform::Windows, None, &cancel, |_| {}, never_asked)
         .await;
 
     assert_eq!(
@@ -347,13 +359,11 @@ async fn a_launch_reads_the_feed_and_the_profiles_before_its_game_is_read() {
     assert_eq!(*events.lock().unwrap(), ["refresh"]);
 }
 
-/// Runtimes whose Voile is in place while a newer release is offered, and
-/// whose Game sessions run a game while `running` is set.
+/// Runtimes whose Voile is in place while a newer release is offered.
 struct OutdatedVoile {
     events: Arc<Mutex<Vec<String>>>,
     fake: Arc<FakeRuntimes>,
     runtimes: Arc<Runtimes>,
-    running: Arc<AtomicBool>,
 }
 
 fn outdated_voile() -> OutdatedVoile {
@@ -361,92 +371,169 @@ fn outdated_voile() -> OutdatedVoile {
     let fake = FakeRuntimes::new(&[], record);
     fake.outdate(Runtime::Voile);
     let runtimes = Runtimes::from_source(fake.clone());
-    let running = Arc::new(AtomicBool::new(false));
-    let watched = running.clone();
-    runtimes.watch_sessions(move || watched.load(Ordering::Acquire));
     OutdatedVoile {
         events,
         fake,
         runtimes,
-        running,
     }
 }
 
-#[tokio::test(start_paused = true)]
-async fn an_outdated_voile_runs_the_launch_and_the_newer_release_downloads_once_its_game_ran() {
-    let OutdatedVoile {
-        events,
-        fake,
-        runtimes,
-        running,
-    } = outdated_voile();
-
-    runtimes
-        .get_for_launch::<Epic>(Platform::Windows, None, &CancelToken::new(), |_| {})
-        .await
-        .unwrap();
-    // The launch goes on with the release in place.
-    assert_eq!(*events.lock().unwrap(), ["remove replaced"]);
-
-    running.store(true, Ordering::Release);
-    // Another launch while the newer release waits starts no second download.
-    runtimes
-        .get_for_launch::<Gog>(Platform::Windows, None, &CancelToken::new(), |_| {})
-        .await
-        .unwrap();
-    tokio::time::sleep(PREFETCH_DELAY * 2).await;
-    assert_eq!(
-        *events.lock().unwrap(),
-        ["remove replaced"],
-        "nothing downloads while a game runs"
-    );
-
-    running.store(false, Ordering::Release);
-    eventually(|| events.lock().unwrap().len() == 2).await;
-    tokio::time::sleep(PREFETCH_DELAY).await;
-    assert_eq!(*events.lock().unwrap(), ["remove replaced", "voile"]);
-    assert_eq!(
-        fake.standing(Runtime::Voile, None),
-        Standing::Current,
-        "a later launch runs the newer release"
-    );
+/// A question the player answers with `answer` at once, and the updates it
+/// was asked about.
+fn answering(
+    answer: Answer,
+) -> (
+    Arc<Mutex<Vec<Update>>>,
+    impl Fn(Update) -> oneshot::Receiver<Answer> + Send,
+) {
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    let asking = asked.clone();
+    (asked, move |update| {
+        asking.lock().unwrap().push(update);
+        let (sender, receiver) = oneshot::channel();
+        sender.send(answer).unwrap();
+        receiver
+    })
 }
 
-#[tokio::test(start_paused = true)]
-async fn a_newer_voile_downloads_after_a_while_when_the_launch_ran_no_game() {
-    let OutdatedVoile {
-        events, runtimes, ..
-    } = outdated_voile();
-    runtimes
-        .get_for_launch::<Gog>(Platform::Windows, None, &CancelToken::new(), |_| {})
-        .await
-        .unwrap();
-
-    tokio::time::sleep(PREFETCH_DELAY - PREFETCH_PACE * 2).await;
-    assert_eq!(*events.lock().unwrap(), ["remove replaced"]);
-
-    tokio::time::sleep(PREFETCH_PACE * 3).await;
-    eventually(|| events.lock().unwrap().len() == 2).await;
-    assert_eq!(*events.lock().unwrap(), ["remove replaced", "voile"]);
+/// What `FakeRuntimes` offers over a release it outdated, which the game
+/// needs when `required`.
+pub(crate) fn fake_offer(required: bool) -> Update {
+    Update {
+        version: "v2".into(),
+        required,
+        releases: vec![crate::voile::Notes {
+            version: "v2".into(),
+            notes: "Fixes.".into(),
+        }],
+    }
 }
 
 #[tokio::test]
-async fn a_launch_whose_game_needs_a_newer_voile_waits_for_it() {
+async fn a_skipped_newer_voile_starts_the_game_in_the_release_in_place_and_is_offered_again() {
     let OutdatedVoile {
         events,
         fake,
         runtimes,
-        ..
     } = outdated_voile();
+    let (asked, ask) = answering(Answer::Skip);
+
+    for _ in 0..2 {
+        runtimes
+            .get_for_launch::<Epic>(Platform::Windows, None, &CancelToken::new(), |_| {}, &ask)
+            .await
+            .unwrap();
+    }
+
+    assert_eq!(
+        *asked.lock().unwrap(),
+        [fake_offer(false), fake_offer(false)]
+    );
+    assert_eq!(
+        *events.lock().unwrap(),
+        ["remove replaced", "remove replaced"],
+        "nothing downloads, now or later"
+    );
+    assert_eq!(
+        fake.standing(Runtime::Voile, None),
+        Standing::Outdated(fake_offer(false))
+    );
+}
+
+#[tokio::test]
+async fn a_newer_voile_the_player_takes_downloads_before_the_game_starts() {
+    let OutdatedVoile {
+        events,
+        fake,
+        runtimes,
+    } = outdated_voile();
+    let (asked, ask) = answering(Answer::Update);
+    let shown = Arc::new(Mutex::new(Vec::new()));
+
+    runtimes
+        .get_for_launch::<Gog>(
+            Platform::Windows,
+            None,
+            &CancelToken::new(),
+            |progress| shown.lock().unwrap().push(progress.runtime),
+            &ask,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(*asked.lock().unwrap(), [fake_offer(false)]);
+    assert_eq!(*events.lock().unwrap(), ["voile", "remove replaced"]);
+    assert_eq!(shown.lock().unwrap()[0], Runtime::Voile);
+    assert_eq!(fake.standing(Runtime::Voile, None), Standing::Current);
+}
+
+#[tokio::test]
+async fn a_launch_whose_game_needs_a_newer_voile_offers_it_as_required() {
+    let OutdatedVoile {
+        events,
+        fake,
+        runtimes,
+    } = outdated_voile();
+    let (asked, ask) = answering(Answer::Update);
     runtimes
         .get_for_launch::<Epic>(
             Platform::Windows,
             Some("v26.3.0-16"),
             &CancelToken::new(),
             |_| {},
+            &ask,
         )
         .await
         .unwrap();
+    assert_eq!(*asked.lock().unwrap(), [fake_offer(true)]);
     assert_eq!(*events.lock().unwrap(), ["voile", "remove replaced"]);
     assert_eq!(fake.standing(Runtime::Voile, None), Standing::Current);
+}
+
+#[tokio::test]
+async fn a_launch_cancelled_before_or_by_the_player_s_answer_downloads_nothing() {
+    let OutdatedVoile {
+        events, runtimes, ..
+    } = outdated_voile();
+    let cancel = CancelToken::new();
+    let waiting = Arc::new(Mutex::new(None));
+    let asking = {
+        let (runtimes, cancel, waiting) = (runtimes.clone(), cancel.clone(), waiting.clone());
+        tokio::spawn(async move {
+            runtimes
+                .get_for_launch::<Epic>(
+                    Platform::Windows,
+                    None,
+                    &cancel,
+                    |_| {},
+                    |_| {
+                        let (sender, receiver) = oneshot::channel();
+                        *waiting.lock().unwrap() = Some(sender);
+                        receiver
+                    },
+                )
+                .await
+        })
+    };
+    eventually(|| waiting.lock().unwrap().is_some()).await;
+
+    cancel.cancel();
+
+    assert_eq!(asking.await.unwrap(), Err(Failure::Cancelled));
+    let ended = runtimes
+        .get_for_launch::<Epic>(
+            Platform::Windows,
+            None,
+            &CancelToken::new(),
+            |_| {},
+            |_| oneshot::channel().1,
+        )
+        .await;
+    assert_eq!(ended, Err(Failure::Cancelled), "no answer will come");
+    let (_, ask) = answering(Answer::Cancel);
+    let declined = runtimes
+        .get_for_launch::<Epic>(Platform::Windows, None, &CancelToken::new(), |_| {}, ask)
+        .await;
+    assert_eq!(declined, Err(Failure::Cancelled), "the player cancelled");
+    assert!(events.lock().unwrap().is_empty());
 }

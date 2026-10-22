@@ -43,6 +43,7 @@ final class FakeSessions: StorefrontSessionsProtocol, @unchecked Sendable {
     private var _overlayStates: [OverlayStateCall] = []
     private var _acceptedInvites: [AcceptedInvite] = []
     private var _microTxnAnswers: [MicroTxnAnswer] = []
+    private var _voileAnswers: [VoileUpdateAnswer] = []
     /// Steam's in-game calls fail with this key until the test clears it.
     private var steamFailure: String?
     /// Steam's in-game answers wait on it, when the test holds them.
@@ -54,6 +55,8 @@ final class FakeSessions: StorefrontSessionsProtocol, @unchecked Sendable {
     var rosettaChecks: [RosettaCall] { lock.withLock { _rosettaChecks } }
     var rosettaResumes: [RosettaCall] { lock.withLock { _rosettaResumes } }
     var declines: [RosettaCall] { lock.withLock { _declines } }
+    /// The player's answers to the newer Voile releases launches offered, in order.
+    var voileAnswers: [VoileUpdateAnswer] { lock.withLock { _voileAnswers } }
     var revocations: [GameAccount] { lock.withLock { _revocations } }
     var stops: Int { lock.withLock { _stops } }
     /// The sessions the player asked to quit, then to force quit, in order.
@@ -122,6 +125,15 @@ final class FakeSessions: StorefrontSessionsProtocol, @unchecked Sendable {
                 return nil
             }
             if let ready { continuation.resume(returning: ready) }
+        }
+    }
+
+    func answerVoileUpdate(sessionId: String, answer: VoileUpdateAnswer) throws {
+        lock.withLock { _voileAnswers.append(answer) }
+        publish { state in
+            guard var active = state.active, active.id == sessionId else { return }
+            active.voileUpdate = nil
+            state.active = active
         }
     }
 

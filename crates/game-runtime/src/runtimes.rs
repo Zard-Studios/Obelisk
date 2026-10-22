@@ -2,10 +2,12 @@
 //! runs in Wine, Valve's Steam components for every Steam game. A Transfer
 //! gets the missing ones before the game's files. A launch that still misses
 //! one gets it after its Admission, before its game is prepared. Each shows
-//! the download its own way. A newer Voile release than the one in place
-//! downloads once no game runs, unless the game's profile needs it. A Voile
-//! release a newer one replaced goes only when a launch finds no Game
-//! session, of any storefront, that may run a game from it.
+//! the download its own way. A launch that finds a newer Voile release than
+//! the one in place asks the player first, with what it brings: to take it
+//! before the game starts, or to start in the release in place, unless the
+//! game's profile needs the newer one. A Voile release a newer one replaced
+//! goes only when a launch finds no Game session, of any storefront, that may
+//! run a game from it.
 use crate::{
     installations::blocking,
     sessions::{self, BoxFuture, Failure, failed},
@@ -13,20 +15,13 @@ use crate::{
 use obelisk_core::{Platform, transfer::CancelToken};
 use std::{
     path::PathBuf,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex},
     time::Duration,
 };
+use tokio::sync::oneshot;
 
 /// How often a download under way shows its progress.
 const PACE: Duration = Duration::from_millis(250);
-/// How often a newer release waiting to download looks for a running game.
-const PREFETCH_PACE: Duration = Duration::from_secs(30);
-/// How long a newer release waits for the launch that found it to run its
-/// game, before it downloads anyway once no game runs.
-const PREFETCH_DELAY: Duration = Duration::from_secs(600);
 
 /// A runtime a build needs to launch, beside its own files.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,16 +33,39 @@ pub enum Runtime {
 }
 
 /// What a launch makes of a runtime in place.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Standing {
     /// In place, and nothing newer is offered.
     Current,
-    /// In place and enough for the game, while a newer release is offered:
-    /// it downloads once no game runs.
-    Outdated,
-    /// Not in place, or not enough for the game while a release that is
-    /// enough is offered: the launch waits for it.
+    /// In place, while a newer release is offered: the player takes it
+    /// before the game starts, or skips it unless the game needs it.
+    Outdated(Update),
+    /// Not in place: the launch waits for it.
     Missing,
+}
+
+/// A newer Voile release a launch offers the player before its game starts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Update {
+    /// The release offered.
+    pub version: String,
+    /// The game needs it: the player takes it, or the launch stops.
+    pub required: bool,
+    /// What each release newer than the one in place brings, up to the one
+    /// offered, newest first.
+    pub releases: Vec<crate::voile::Notes>,
+}
+
+/// The player's answer to a newer Voile release a launch offers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Answer {
+    /// Download it, then start the game in it.
+    Update,
+    /// Start the game in the release in place: the next launch offers the
+    /// newer one again.
+    Skip,
+    /// Stop the launch.
+    Cancel,
 }
 
 /// How much of a runtime has downloaded: the bytes received, and the total.
@@ -92,8 +110,6 @@ pub struct Runtimes {
     source: Arc<dyn RuntimeSource>,
     /// Whether each storefront's Game sessions may run a game now.
     sessions: Mutex<Vec<Box<dyn Fn() -> bool + Send + Sync>>>,
-    /// A newer release downloads, or waits for no game to run.
-    prefetching: AtomicBool,
 }
 
 impl Runtimes {
@@ -107,7 +123,6 @@ impl Runtimes {
         Arc::new(Self {
             source,
             sessions: Mutex::new(Vec::new()),
-            prefetching: AtomicBool::new(false),
         })
     }
 
@@ -135,7 +150,7 @@ impl Runtimes {
         shown: impl Fn(Progress) + Send,
     ) -> Result<(), Failure> {
         for runtime in needed::<P>(platform) {
-            if self.standing(runtime, None).await? == Standing::Missing {
+            if matches!(self.standing(runtime, None).await?, Standing::Missing) {
                 self.download(runtime, cancel, &shown).await?;
             }
         }
@@ -146,23 +161,30 @@ impl Runtimes {
     }
 
     /// Gets the runtimes as `get` does, for a game whose profile needs
-    /// `voile` or a newer Voile release; a newer release than the one in
-    /// place and enough downloads once no game runs. Then, for a build that
-    /// needs Voile, removes the releases a newer one replaced, unless the
-    /// Game sessions of a storefront may run a game. A failed or cancelled
-    /// launch removes nothing.
+    /// `voile` or a newer Voile release. A newer release than the one in
+    /// place goes to `ask` first, and downloads only once the answer its
+    /// receiver gets takes it; Cancel, or no answer, cancels the launch.
+    /// Then, for a build that needs Voile, removes the releases a
+    /// newer one replaced, unless the Game sessions of a storefront may run a
+    /// game. A failed or cancelled launch removes nothing.
     pub(crate) async fn get_for_launch<P: sessions::Storefront>(
-        self: &Arc<Self>,
+        &self,
         platform: Platform,
         voile: Option<&'static str>,
         cancel: &CancelToken,
         shown: impl Fn(Progress) + Send,
+        ask: impl Fn(Update) -> oneshot::Receiver<Answer> + Send,
     ) -> Result<(), Failure> {
         for runtime in needed::<P>(platform) {
-            match self.standing(runtime, voile).await? {
-                Standing::Current => {}
-                Standing::Outdated => self.prefetch(runtime),
-                Standing::Missing => self.download(runtime, cancel, &shown).await?,
+            let take = match self.standing(runtime, voile).await? {
+                Standing::Current => false,
+                Standing::Missing => true,
+                Standing::Outdated(update) => {
+                    answered(ask(update), cancel).await? == Answer::Update
+                }
+            };
+            if take {
+                self.download(runtime, cancel, &shown).await?;
             }
         }
         if cancel.is_cancelled() {
@@ -223,36 +245,6 @@ impl Runtimes {
         }
     }
 
-    /// Downloads the newer release of `runtime` once no game runs, as
-    /// automatic updates wait for one: the launch that found it goes on with
-    /// the release in place, and a later launch runs the new one.
-    fn prefetch(self: &Arc<Self>, runtime: Runtime) {
-        if self.prefetching.swap(true, Ordering::AcqRel) {
-            return;
-        }
-        let runtimes = self.clone();
-        tokio::spawn(async move {
-            runtimes.until_no_game_runs().await;
-            let _ = runtimes.source.download(runtime).run().await;
-            runtimes.prefetching.store(false, Ordering::Release);
-        });
-    }
-
-    /// Waits until no Game session may run a game, once a game has run, or
-    /// after `PREFETCH_DELAY` when none did.
-    async fn until_no_game_runs(&self) {
-        let since = tokio::time::Instant::now();
-        let mut ran = false;
-        loop {
-            tokio::time::sleep(PREFETCH_PACE).await;
-            let running = self.may_run();
-            ran |= running;
-            if !running && (ran || since.elapsed() >= PREFETCH_DELAY) {
-                return;
-            }
-        }
-    }
-
     /// Whether the Game sessions of a storefront may run a game now.
     fn may_run(&self) -> bool {
         self.sessions
@@ -260,6 +252,18 @@ impl Runtimes {
             .unwrap()
             .iter()
             .any(|may_run| may_run())
+    }
+}
+
+/// The player's answer `answer` gets, unless `cancel` stops the launch first.
+/// Cancel, or a launch that ended without an answer, cancels it.
+async fn answered(
+    answer: oneshot::Receiver<Answer>,
+    cancel: &CancelToken,
+) -> Result<Answer, Failure> {
+    match cancel.race(answer).await {
+        Ok(Ok(answer)) if answer != Answer::Cancel => Ok(answer),
+        _ => Err(Failure::Cancelled),
     }
 }
 

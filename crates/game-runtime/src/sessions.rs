@@ -1,11 +1,12 @@
 //! One storefront's Game sessions: the Reservation a launch holds from its
 //! admission until its supervisor confirms the game is gone, the recovery of
 //! a session Obelisk left running, Account revocation, and the answers to a
-//! session's Cloud question and Rosetta requirement. Only the supervisor owns
-//! the game and its processes; this module observes it and forwards answers.
+//! session's Cloud question, its Rosetta requirement and the newer Voile
+//! release its launch offers. Only the supervisor owns the game and its
+//! processes; this module observes it and forwards answers.
 use crate::{
     cloud::{Choice, Phase as CloudPhase, Status as CloudStatus},
-    runtimes::{self, Runtime, Runtimes},
+    runtimes::{self, Answer, Runtime, Runtimes, Update},
     supervisor::{self, FailureReason, Phase, Provider, Record},
 };
 use obelisk_core::{Platform, transfer::CancelToken};
@@ -17,7 +18,7 @@ use std::{
     },
     time::Duration,
 };
-use tokio::sync::watch;
+use tokio::sync::{oneshot, watch};
 
 /// A failed recovery or snapshot is retried after this long.
 const PACE: Duration = Duration::from_millis(250);
@@ -240,6 +241,9 @@ pub struct Session<P: Storefront> {
     pub observed: bool,
     /// How much of a runtime has downloaded while the launch waits for it.
     pub runtime_install: Option<RuntimeInstall>,
+    /// The newer Voile release the launch waits for the player to take or
+    /// skip, before any download.
+    pub voile_update: Option<Update>,
     /// When this Obelisk saw the game start, in seconds since the Unix
     /// epoch: once a session it saw preparing is past it, even if its game
     /// already exited. A game recovered running started before, and has none.
@@ -260,6 +264,7 @@ impl<P: Storefront> Session<P> {
             store: None,
             observed: false,
             runtime_install: None,
+            voile_update: None,
             started_at: None,
             played: None,
             rosetta: None,
@@ -276,6 +281,7 @@ impl<P: Storefront> Session<P> {
             store: Some(observation.store.clone()),
             observed: true,
             runtime_install: None,
+            voile_update: None,
             started_at: None,
             played: observation.played.clone(),
             rosetta: observation.rosetta,
@@ -355,6 +361,8 @@ struct Inner<P: Storefront> {
     operation: Option<Arc<Operation>>,
     /// The session and decision of a Rosetta requirement the player declined.
     declined_rosetta: Option<(String, u64)>,
+    /// Where the player's answer to the active launch's `voile_update` goes.
+    voile_answer: Option<oneshot::Sender<Answer>>,
 }
 impl<P: Storefront> Inner<P> {
     fn state(&self) -> State<P> {
@@ -388,6 +396,7 @@ impl<P: Storefront> Inner<P> {
     /// The Reservation ends: nothing is active any more.
     fn finish(&mut self) {
         self.declined_rosetta = None;
+        self.voile_answer = None;
         self.active = None;
         self.client = None;
         self.applied.clear();
@@ -622,6 +631,7 @@ impl<P: Storefront> Sessions<P> {
             client: None,
             operation: Some(operation.clone()),
             declined_rosetta: None,
+            voile_answer: None,
         };
         let (published, _) = watch::channel(inner.state());
         let shared = Arc::new(Shared {
@@ -872,6 +882,21 @@ impl<P: Storefront> Sessions<P> {
             operation.cancel();
         }
     }
+
+    /// The player's answer to the newer Voile release session `id`'s launch
+    /// offers: Cancel stops the launch. A release its game needs cannot be
+    /// skipped.
+    pub fn answer_voile_update(&self, id: &str, answer: Answer) -> Result<(), Failure> {
+        let answered = self.shared.update(|inner| {
+            let active = inner.active.as_mut().filter(|active| active.id == id)?;
+            if active.voile_update.as_ref()?.required && answer == Answer::Skip {
+                return None;
+            }
+            active.voile_update = None;
+            inner.voile_answer.take()?.send(answer).ok()
+        });
+        answered.ok_or_else(|| Failure::Failed(P::INVALID_SESSION.to_owned()))
+    }
 }
 
 /// One admitted launch. It holds the Reservation until its session is
@@ -912,6 +937,21 @@ impl<P: Storefront> Canceller<P> {
         self.operation.hooks.lock().unwrap().push(Box::new(hook));
     }
 
+    /// Shows `update` on the session until the player answers it, which the
+    /// receiver gets. A launch no longer current never gets an answer.
+    fn offer_voile_update(&self, update: Update) -> oneshot::Receiver<Answer> {
+        let (answer, answered) = oneshot::channel();
+        self.shared.update(|inner| {
+            if inner.current(&self.operation)
+                && let Some(active) = &mut inner.active
+            {
+                active.voile_update = Some(update);
+                inner.voile_answer = Some(answer);
+            }
+        });
+        answered
+    }
+
     /// How much of a runtime has downloaded while the launch waits for it.
     fn runtime_install(&self, install: Option<RuntimeInstall>) {
         self.shared.update(|inner| {
@@ -945,7 +985,8 @@ impl<P: Storefront> Admission<P> {
 
     /// Hands the admitted game to a new supervisor through `handover`, then
     /// follows its session until it is finished. The runtimes its build
-    /// misses come first, their download showing on the session. A failure
+    /// misses come first, their download showing on the session, after the
+    /// player's answer to a newer Voile release, which it shows. A failure
     /// or cancellation before the supervisor starts refuses the launch and
     /// gives the Reservation back; once it starts, only its session does.
     pub async fn hand_off<H: Handover<P>>(self, handover: H) -> Result<(), Failure> {
@@ -959,9 +1000,13 @@ impl<P: Storefront> Admission<P> {
             let got = admission
                 .shared
                 .runtimes
-                .get_for_launch::<P>(handover.platform(), voile, &cancel, |progress| {
-                    admission.runtime_install(Some(progress.into()))
-                })
+                .get_for_launch::<P>(
+                    handover.platform(),
+                    voile,
+                    &cancel,
+                    |progress| admission.runtime_install(Some(progress.into())),
+                    |update| admission.offer_voile_update(update),
+                )
                 .await;
             admission.runtime_install(None);
             got.map_err(Handoff::Refused)?;

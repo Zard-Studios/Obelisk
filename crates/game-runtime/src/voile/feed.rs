@@ -1,8 +1,9 @@
 //! The releases Voile offers, as `voile-feed.json` on Voile's `main` lists
-//! them: each one's archive, the contract it keeps with Obelisk, and whether
-//! players should leave it. Voile's Feed workflow writes it when a release is
-//! published and signs it. Obelisk reads it as a Windows game launches, and
-//! keeps the last one whose signature it checked beside the runtimes.
+//! them: each one's archive, the contract it keeps with Obelisk, what it
+//! brings, and whether players should leave it. Voile's Feed workflow writes
+//! it when a release is published and signs it. Obelisk reads it as a
+//! Windows game launches, and keeps the last one whose signature it checked
+//! beside the runtimes.
 use super::Release;
 use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 use base64::Engine as _;
@@ -33,6 +34,10 @@ pub(super) struct Offered {
     pub contract: u32,
     #[serde(flatten)]
     pub release: Release,
+    /// What it brings, in Markdown, as its GitHub release tells it. The
+    /// entries written before the feed carried them have none.
+    #[serde(default)]
+    pub notes: String,
     /// Why players should leave it, once it is withdrawn.
     pub withdrawn: Option<String>,
 }

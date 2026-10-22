@@ -1,15 +1,16 @@
 //! Voile, the Wine runtime Windows games run in. Obelisk runs the newest
 //! release installed that keeps its contract: the paths, variables and
 //! programs it relies on in a runtime, which docs/CONTRACT.md lists. As a
-//! Windows game launches, Obelisk reads Voile's feed: a newer release of its
-//! contract downloads once no game runs, unless the game needs it to start.
-//! A Windows build's Transfer gets a release before the game's files when
-//! none is installed. The release built into Obelisk stands in for the feed
-//! until one was read. A development runtime that voile's install-dev.sh put
-//! in `current` takes precedence.
+//! Windows game launches, Obelisk reads Voile's feed: the player takes a
+//! newer release of its contract before the game starts, with what it brings
+//! in view, or starts the game in the release in place unless it needs the
+//! newer one. A Windows build's Transfer gets a release before the game's
+//! files when none is installed. The release built into Obelisk stands in for
+//! the feed until one was read. A development runtime that voile's
+//! install-dev.sh put in `current` takes precedence.
 //!
 //! The release also carries the Linux engine's runtime, in its `linux` folder.
-use crate::runtimes::Standing;
+use crate::runtimes::{Standing, Update};
 use obelisk_core::transfer::CancelToken;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -212,19 +213,26 @@ fn newest(root: &Path, offered: &[Offered]) -> Option<(Vec<u64>, PathBuf)> {
         .max_by(|a, b| a.0.cmp(&b.0))
 }
 
-/// The release Obelisk wants of those the last feed read `offered`: the
-/// newest for its contract, else the one it was built with.
-fn wanted(offered: &[Offered]) -> Release {
+/// The releases the last feed read `offered` that Obelisk runs, with their
+/// version's numbers: of its contract, and not withdrawn.
+fn runnable(offered: &[Offered]) -> impl Iterator<Item = (Vec<u64>, &Offered)> {
     offered
         .iter()
         .filter(|offered| offered.contract == contract() && offered.withdrawn.is_none())
-        .filter_map(|offered| Some((numbers(&offered.release.version)?, &offered.release)))
+        .filter_map(|offered| Some((numbers(&offered.release.version)?, offered)))
+}
+
+/// The release Obelisk wants of those the last feed read `offered`: the
+/// newest it runs, else the one it was built with.
+fn wanted(offered: &[Offered]) -> Release {
+    runnable(offered)
         .max_by(|a, b| a.0.cmp(&b.0))
-        .map_or_else(|| release().clone(), |(_, newest)| newest.clone())
+        .map_or_else(|| release().clone(), |(_, newest)| newest.release.clone())
 }
 
 /// What a launch makes of the runtimes in `root`, for a game whose profile
-/// needs `minimum` or a newer release.
+/// needs `minimum` or a newer release. A newer release comes with what each
+/// release newer than the one in place brings, up to it, newest first.
 pub(crate) fn standing(root: &Path, minimum: Option<&str>) -> Standing {
     if development(root).is_some() {
         return Standing::Current;
@@ -233,18 +241,43 @@ pub(crate) fn standing(root: &Path, minimum: Option<&str>) -> Standing {
     let Some((installed, _)) = newest(root, &offered) else {
         return Standing::Missing;
     };
-    let Some(wanted) = numbers(&wanted(&offered).version) else {
+    let version = wanted(&offered).version;
+    let Some(wanted) = numbers(&version) else {
         return Standing::Current;
     };
     if installed >= wanted {
         return Standing::Current;
     }
-    // A game that needs a newer release waits for the one wanted, when that
+    // A game that needs a newer release cannot skip the one wanted, when that
     // one is enough.
-    match minimum.and_then(numbers) {
-        Some(minimum) if installed < minimum && wanted >= minimum => Standing::Missing,
-        _ => Standing::Outdated,
-    }
+    let required = minimum
+        .and_then(numbers)
+        .is_some_and(|minimum| installed < minimum && wanted >= minimum);
+    let mut newer: Vec<_> = runnable(&offered)
+        .filter(|(order, _)| *order > installed && *order <= wanted)
+        .collect();
+    newer.sort_by(|a, b| b.0.cmp(&a.0));
+    let releases = newer
+        .into_iter()
+        .map(|(_, offered)| Notes {
+            version: offered.release.version.clone(),
+            notes: offered.notes.clone(),
+        })
+        .collect();
+    Standing::Outdated(Update {
+        version,
+        required,
+        releases,
+    })
+}
+
+/// What a Voile release brings.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Notes {
+    pub version: String,
+    /// In Markdown, as its GitHub release tells it; empty when the feed has
+    /// none for it.
+    pub notes: String,
 }
 
 /// One install of a release, which the player can cancel and watch.

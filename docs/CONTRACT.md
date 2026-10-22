@@ -1,6 +1,6 @@
 # The contract between Obelisk and Voile
 
-Obelisk runs Windows games in a [Voile](https://github.com/Zagrios/Voile) runtime it downloads on its own: as a Windows game launches, it reads Voile's signed `voile-feed.json` and moves to the newest release of its contract. The contract is everything Obelisk relies on inside a runtime. One number counts its changes, on both sides:
+Obelisk runs Windows games in a [Voile](https://github.com/Zagrios/Voile) runtime it downloads on its own: as a Windows game launches, it reads Voile's signed `voile-feed.json` and offers the player the newest release of its contract. The contract is everything Obelisk relies on inside a runtime. One number counts its changes, on both sides:
 
 - Voile's `CONTRACT` file, which every release built from that commit carries in its `runtime.json`;
 - `contract` in Obelisk's `crates/game-runtime/voile-release.json`.
@@ -87,16 +87,17 @@ In the Linux engine's guest:
       "published": "2026-10-21",
       "url": "https://github.com/Zagrios/Voile/releases/download/v26.3.0-16/voile-v26.3.0-16.tar.xz",
       "size": 431204816,
-      "sha256": "…"
+      "sha256": "…",
+      "notes": "### Fixes\n\n- …"
     }
   ]
 }
 ```
 
-Voile's Feed workflow writes a release's entry when the release is published, from its assets and its commit's `CONTRACT`. It then signs the file with Ed25519 into `voile-feed.json.sig`, the base64 of the signature. Obelisk checks it with the public key in `crates/game-runtime/src/voile/feed.rs`, which Voile's `scripts/feed-key.sh` made; it ignores a feed whose signature does not hold, or of another `format`, and goes on with the last one it checked.
+Voile's Feed workflow writes a release's entry when the release is published, from its assets, its notes and its commit's `CONTRACT`. Obelisk shows the notes, Markdown as GitHub shows them, of each release newer than the player's before they take one; run the workflow again with the version after editing a release's notes. Entries written before notes were added have none. It then signs the file with Ed25519 into `voile-feed.json.sig`, the base64 of the signature. Obelisk checks it with the public key in `crates/game-runtime/src/voile/feed.rs`, which Voile's `scripts/feed-key.sh` made; it ignores a feed whose signature does not hold, or of another `format`, and goes on with the last one it checked.
 
 To withdraw a release, run the Feed workflow from Voile's Actions tab with its version and a reason. The entry stays, with `withdrawn`: Obelisk no longer runs that release, downloads the newest one left on the next launch, and removes the withdrawn one once no game runs. Running the workflow again with an empty reason puts the release back.
 
 ## A game that needs a release
 
-A game profile in `crates/game-runtime/profiles.json` can name the oldest release its game runs in, with `minimum_voile`. It is a floor, not a pin: the game runs in the newest release installed, as every game does. Only when the release in place is older than that one does the game's launch wait for the newest release of the contract to download, instead of starting with the old one. Other games start at once, and the newer release downloads once no game runs.
+A game profile in `crates/game-runtime/profiles.json` can name the oldest release its game runs in, with `minimum_voile`. It is a floor, not a pin: the game runs in the newest release installed, as every game does. Every Windows game's launch that finds a newer release asks the player first: they take it, and it downloads before the game starts, or skip it, and the game starts with the release in place; the next launch asks again. Only when the release in place is older than the game's `minimum_voile` can it not be skipped: the player takes it, or closes the question, which stops the launch.

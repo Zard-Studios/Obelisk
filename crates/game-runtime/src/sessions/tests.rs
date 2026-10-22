@@ -4,7 +4,7 @@ use super::*;
 use crate::{
     HostState,
     epic::Epic,
-    runtimes::tests::{FakeRuntimes, ready, recorded},
+    runtimes::tests::{FakeRuntimes, fake_offer, ready, recorded},
     steam::{Steam, Store},
 };
 use std::{
@@ -1320,6 +1320,132 @@ async fn a_runtime_that_fails_to_download_refuses_the_launch_before_it_prepares(
     assert_eq!(outcome, Err(failure));
     assert!(steps.lock().unwrap().is_empty(), "nothing is prepared");
     assert!(!sessions.state().busy());
+}
+
+/// A Windows build's launch from Epic sessions whose Voile is in place while
+/// a newer release is offered, waiting for the player's answer.
+struct OfferingVoile {
+    sessions: Sessions<Epic>,
+    launch: tokio::task::JoinHandle<Result<(), Failure>>,
+    /// The steps its handover took.
+    steps: Arc<Mutex<Vec<&'static str>>>,
+    runtimes: Arc<FakeRuntimes>,
+    /// The game it starts.
+    game: Arc<Fake<Epic>>,
+}
+
+impl OfferingVoile {
+    /// Its game needs the newer release when `required`.
+    async fn launch(required: bool) -> Self {
+        let runtimes = FakeRuntimes::new(&[], |_| {});
+        runtimes.outdate(Runtime::Voile);
+        let (sessions, store) = epic_launches(Runtimes::from_source(runtimes.clone())).await;
+        let game = Fake::<Epic>::with("account".into(), store.clone(), Phase::Preparing);
+        let mut handover = Scripted::starting(Ok(game.clone() as Arc<dyn Supervised<Epic>>));
+        handover.platform = Platform::Windows;
+        let steps = handover.steps();
+        let mut admission = sessions.admit(store, "account".into()).unwrap();
+        if required {
+            admission.needs_voile(Some("v2"));
+        }
+        let launch = tokio::spawn(admission.hand_off(handover));
+        let offering = Self {
+            sessions,
+            launch,
+            steps,
+            runtimes,
+            game,
+        };
+        eventually(|| offering.shown_update().is_some()).await;
+        offering
+    }
+
+    /// The newer Voile release the session shows.
+    fn shown_update(&self) -> Option<Update> {
+        self.sessions
+            .state()
+            .active
+            .and_then(|active| active.voile_update)
+    }
+
+    fn answer(&self, answer: runtimes::Answer) -> Result<(), Failure> {
+        let id = self.sessions.state().active.unwrap().id;
+        self.sessions.answer_voile_update(&id, answer)
+    }
+
+    /// Lets the game start, then exit.
+    async fn play(self) {
+        eventually(|| self.game.read(|state| state.begins) == 1).await;
+        self.game.finish(false);
+        assert_eq!(self.launch.await.unwrap(), Ok(()));
+    }
+}
+
+#[tokio::test]
+async fn a_launch_shows_a_newer_voile_release_until_the_player_skips_it() {
+    let offering = OfferingVoile::launch(false).await;
+    assert_eq!(offering.shown_update(), Some(fake_offer(false)));
+    assert!(
+        offering.steps.lock().unwrap().is_empty(),
+        "nothing is prepared yet"
+    );
+    let refused = Err(Failure::Failed(Epic::INVALID_SESSION.into()));
+    assert_eq!(
+        offering
+            .sessions
+            .answer_voile_update("another session", runtimes::Answer::Skip),
+        refused
+    );
+
+    offering.answer(runtimes::Answer::Skip).unwrap();
+
+    eventually(|| offering.steps.lock().unwrap().contains(&"prepare")).await;
+    assert_eq!(offering.shown_update(), None);
+    assert!(
+        offering.runtimes.in_place().is_empty(),
+        "nothing downloaded"
+    );
+    assert_eq!(
+        offering.answer(runtimes::Answer::Update),
+        refused,
+        "answered once"
+    );
+    offering.play().await;
+}
+
+#[tokio::test]
+async fn a_newer_voile_release_the_player_takes_downloads_before_the_game_is_prepared() {
+    let offering = OfferingVoile::launch(false).await;
+
+    offering.answer(runtimes::Answer::Update).unwrap();
+
+    eventually(|| offering.steps.lock().unwrap().contains(&"prepare")).await;
+    assert_eq!(offering.runtimes.in_place(), [Runtime::Voile]);
+    offering.play().await;
+}
+
+#[tokio::test]
+async fn a_voile_release_the_game_needs_cannot_be_skipped_and_cancelling_stops_the_launch() {
+    let offering = OfferingVoile::launch(true).await;
+    assert_eq!(offering.shown_update(), Some(fake_offer(true)));
+    assert_eq!(
+        offering.answer(runtimes::Answer::Skip),
+        Err(Failure::Failed(Epic::INVALID_SESSION.into()))
+    );
+    assert!(offering.shown_update().is_some(), "still asked");
+
+    offering.answer(runtimes::Answer::Cancel).unwrap();
+
+    assert_eq!(offering.launch.await.unwrap(), Err(Failure::Cancelled));
+    assert!(
+        offering.steps.lock().unwrap().is_empty(),
+        "nothing is prepared"
+    );
+    assert!(
+        offering.runtimes.in_place().is_empty(),
+        "nothing downloaded"
+    );
+    assert!(!offering.sessions.state().busy());
 }
 
 #[tokio::test]
