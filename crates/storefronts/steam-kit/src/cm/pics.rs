@@ -34,21 +34,30 @@ impl AppInfo {
     /// is a released game: not a DLC, tool, soundtrack or demo, nor a game
     /// Steam has yet to release.
     pub(crate) fn unplayed_game(&self) -> Option<OwnedGameInfo> {
-        let common = |field| {
-            let root = self.tree.get("appinfo").unwrap_or(&self.tree);
-            root.at(&["common", field]).and_then(kv::Kv::text)
-        };
-        let game = common("type").is_some_and(|kind| kind.eq_ignore_ascii_case("game"));
-        let released =
-            common("releasestate").is_none_or(|state| state.eq_ignore_ascii_case("released"));
+        let game = self
+            .common("type")
+            .is_some_and(|kind| kind.eq_ignore_ascii_case("game"));
+        let released = self
+            .common("releasestate")
+            .is_none_or(|state| state.eq_ignore_ascii_case("released"));
         (game && released && !self.name.is_empty()).then(|| OwnedGameInfo {
             app_id: self.app_id,
             name: self.name.clone(),
-            icon_hash: common("icon").unwrap_or_default().to_owned(),
+            icon_hash: self.common("icon").unwrap_or_default().to_owned(),
             last_played: 0,
             playtime_minutes: 0,
             record: serde_json::Value::Null,
         })
+    }
+
+    /// Whether the Steam store has a page for the app.
+    pub(crate) fn on_store(&self) -> bool {
+        self.common("store_asset_mtime").is_some()
+    }
+
+    fn common(&self, field: &str) -> Option<&str> {
+        let root = self.tree.get("appinfo").unwrap_or(&self.tree);
+        root.at(&["common", field]).and_then(kv::Kv::text)
     }
 }
 
@@ -59,24 +68,36 @@ pub struct ContentLicenses {
     pub depots: BTreeSet<u32>,
     /// The apps the account's own licenses grant, not a family member's.
     pub own_apps: BTreeSet<u32>,
+    /// The apps Steam's free license grants every account, such as Team
+    /// Fortress 2 and Valve's Spacewar test app.
+    pub free_apps: BTreeSet<u32>,
     /// When the account got each app: the creation of its oldest license
     /// that grants it, in seconds since the Unix epoch.
     pub acquired: BTreeMap<u32, u32>,
+    /// The packages PICS does not know, and those it withholds from the
+    /// account: what they grant is missing here.
+    pub unknown_packages: Vec<u32>,
+    pub withheld_packages: Vec<u32>,
 }
 
 impl ContentLicenses {
+    /// Fails when Steam left a package out: depot and DLC rights read
+    /// without it would leave depots out of a download.
+    pub(crate) fn complete(&self) -> Result<(), CmError> {
+        let code = if !self.unknown_packages.is_empty() {
+            "backend.steam.cm.packagesUnavailable"
+        } else if !self.withheld_packages.is_empty() {
+            "backend.steam.cm.incompletePackageAccess"
+        } else {
+            return Ok(());
+        };
+        Err(CmError::Protocol(code.into()))
+    }
+
     /// Adds what a package grants, under a license created at `created`
     /// when Steam told it, which is the account's `own` or a family member's.
     pub(super) fn extend_package(&mut self, root: &kv::Kv, created: Option<u32>, own: bool) {
-        let ids = |field| {
-            root.get(field).into_iter().flat_map(|entries| {
-                entries
-                    .children()
-                    .iter()
-                    .filter_map(|(_, value)| value.text()?.parse::<u32>().ok().filter(|id| *id > 0))
-            })
-        };
-        for app in ids("appids") {
+        for app in package_ids(root, "appids") {
             self.apps.insert(app);
             if own {
                 self.own_apps.insert(app);
@@ -86,8 +107,24 @@ impl ContentLicenses {
                 *acquired = (*acquired).min(created);
             }
         }
-        self.depots.extend(ids("depotids"));
+        self.depots.extend(package_ids(root, "depotids"));
     }
+
+    /// Adds what Steam's free license grants, which is the account's own.
+    pub(super) fn extend_free_license(&mut self, root: &kv::Kv, created: Option<u32>) {
+        self.extend_package(root, created, true);
+        self.free_apps.extend(package_ids(root, "appids"));
+    }
+}
+
+/// The nonzero IDs a package lists under `field`.
+fn package_ids<'a>(root: &'a kv::Kv, field: &str) -> impl Iterator<Item = u32> + 'a {
+    root.get(field).into_iter().flat_map(|entries| {
+        entries
+            .children()
+            .iter()
+            .filter_map(|(_, value)| value.text()?.parse::<u32>().ok().filter(|id| *id > 0))
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -291,6 +328,18 @@ mod tests {
         assert!(!rights.apps.contains(&1046443));
         assert!(!rights.depots.contains(&99));
         assert!(!rights.depots.contains(&0));
+    }
+
+    #[test]
+    fn rights_missing_a_package_are_incomplete() {
+        let mut rights = ContentLicenses::default();
+        assert!(rights.complete().is_ok());
+        rights.withheld_packages.push(3);
+        let error = rights.complete().unwrap_err().to_string();
+        assert!(error.contains("incompletePackageAccess"), "{error}");
+        rights.unknown_packages.push(2);
+        let error = rights.complete().unwrap_err().to_string();
+        assert!(error.contains("packagesUnavailable"), "{error}");
     }
 
     #[test]

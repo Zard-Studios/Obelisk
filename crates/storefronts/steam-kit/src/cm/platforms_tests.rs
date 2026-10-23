@@ -301,6 +301,26 @@ fn package(id: u32, apps: &[u32]) -> proto::ProductInfo {
     }
 }
 
+/// An app as PICS sends it, in text KeyValues, with `common` fields.
+fn app(id: u32, common: &str) -> proto::ProductInfo {
+    proto::ProductInfo {
+        id,
+        buffer: format!(r#""appinfo" {{ "appid" "{id}" "common" {{ {common} }} }}"#)
+            .into_bytes()
+            .into(),
+        ..Default::default()
+    }
+}
+
+/// A product Steam withholds from the account.
+fn withheld(id: u32) -> proto::ProductInfo {
+    proto::ProductInfo {
+        id,
+        missing_token: true,
+        ..Default::default()
+    }
+}
+
 #[tokio::test]
 async fn library_adds_the_free_games_owned_games_leave_out() {
     const ACCOUNT: u32 = 76_561_198_000_000_000_u64 as u32;
@@ -343,13 +363,6 @@ async fn library_adds_the_free_games_owned_games_leave_out() {
             ..Default::default()
         };
         server.reply(&packages, PRODUCT_RESPONSE, &response).await;
-        let app = |id: u32, common: &str| proto::ProductInfo {
-            id,
-            buffer: format!(r#""appinfo" {{ "appid" "{id}" "common" {{ {common} }} }}"#)
-                .into_bytes()
-                .into(),
-            ..Default::default()
-        };
         let apps = proto::ProductResponse {
             apps: vec![
                 app(
@@ -362,11 +375,7 @@ async fn library_adds_the_free_games_owned_games_leave_out() {
                     r#""name" "Upcoming" "type" "Game" "releasestate" "prerelease""#,
                 ),
                 // Steam withholds this one's metadata from the account.
-                proto::ProductInfo {
-                    id: 733,
-                    missing_token: true,
-                    ..Default::default()
-                },
+                withheld(733),
             ],
             ..Default::default()
         };
@@ -383,6 +392,141 @@ async fn library_adds_the_free_games_owned_games_leave_out() {
         Some(&1_700_000_000)
     );
     assert!(server.quiet().await);
+}
+
+#[tokio::test]
+async fn library_adds_the_free_license_games_the_store_sells() {
+    let (client, mut server, _) = fixture().await;
+    push_licenses(
+        &mut server,
+        vec![proto::License {
+            package_id: 0,
+            ..Default::default()
+        }],
+    )
+    .await;
+    let answer = async {
+        let owned = server.request(SERVICE_REQUEST).await;
+        let response = proto::OwnedGamesResponse::default();
+        server.reply(&owned, SERVICE_RESPONSE, &response).await;
+        let packages = server.request(PRODUCT_REQUEST).await;
+        let request = proto::ProductRequest::decode(packages.body.clone()).unwrap();
+        assert_eq!(request.packages[0].id, 0);
+        let response = proto::ProductResponse {
+            packages: vec![package(0, &[440, 480])],
+            ..Default::default()
+        };
+        server.reply(&packages, PRODUCT_RESPONSE, &response).await;
+        // Spacewar, Valve's test app, has no store page.
+        let apps = proto::ProductResponse {
+            apps: vec![
+                app(
+                    440,
+                    r#""name" "Team Fortress 2" "type" "game" "store_asset_mtime" "1745368576""#,
+                ),
+                app(480, r#""name" "Spacewar" "type" "Game""#),
+            ],
+            ..Default::default()
+        };
+        respond_batch(&mut server, &[440, 480], apps).await;
+    };
+    let (games, ()) = tokio::join!(client.games(), answer);
+    let names: Vec<_> = games.unwrap().into_iter().map(|game| game.name).collect();
+    assert_eq!(names, ["Team Fortress 2"]);
+    assert!(server.quiet().await);
+}
+
+#[tokio::test]
+async fn a_withheld_free_license_keeps_the_other_licenses_games() {
+    let (client, mut server, _) = fixture().await;
+    push_licenses(
+        &mut server,
+        vec![
+            proto::License {
+                package_id: 0,
+                ..Default::default()
+            },
+            proto::License {
+                package_id: 1,
+                ..Default::default()
+            },
+        ],
+    )
+    .await;
+    let answer = async {
+        let owned = server.request(SERVICE_REQUEST).await;
+        let response = proto::OwnedGamesResponse::default();
+        server.reply(&owned, SERVICE_RESPONSE, &response).await;
+        let packages = server.request(PRODUCT_REQUEST).await;
+        let response = proto::ProductResponse {
+            packages: vec![withheld(0), package(1, &[730])],
+            ..Default::default()
+        };
+        server.reply(&packages, PRODUCT_RESPONSE, &response).await;
+        let apps = proto::ProductResponse {
+            apps: vec![app(730, r#""name" "Counter-Strike 2" "type" "Game""#)],
+            ..Default::default()
+        };
+        respond_batch(&mut server, &[730], apps).await;
+    };
+    let (games, ()) = tokio::join!(client.games(), answer);
+    let names: Vec<_> = games.unwrap().into_iter().map(|game| game.name).collect();
+    assert_eq!(names, ["Counter-Strike 2"]);
+    assert!(server.quiet().await);
+}
+
+#[tokio::test]
+async fn a_withheld_package_keeps_the_other_licenses_games() {
+    let (client, mut server, _) = fixture().await;
+    push_licenses(
+        &mut server,
+        (1..=3)
+            .map(|package_id| proto::License {
+                package_id,
+                ..Default::default()
+            })
+            .collect(),
+    )
+    .await;
+    let answer = async {
+        let owned = server.request(SERVICE_REQUEST).await;
+        let response = proto::OwnedGamesResponse::default();
+        server.reply(&owned, SERVICE_RESPONSE, &response).await;
+        let packages = server.request(PRODUCT_REQUEST).await;
+        // Steam does not describe package 2 and withholds package 3.
+        let response = proto::ProductResponse {
+            packages: vec![package(1, &[730]), withheld(3)],
+            unknown_packages: vec![2],
+            ..Default::default()
+        };
+        server.reply(&packages, PRODUCT_RESPONSE, &response).await;
+        let apps = proto::ProductResponse {
+            apps: vec![app(730, r#""name" "Counter-Strike 2" "type" "Game""#)],
+            ..Default::default()
+        };
+        respond_batch(&mut server, &[730], apps).await;
+    };
+    let (games, ()) = tokio::join!(client.games(), answer);
+    let names: Vec<_> = games.unwrap().into_iter().map(|game| game.name).collect();
+    assert_eq!(names, ["Counter-Strike 2"]);
+    assert!(server.quiet().await);
+    // Download rights still read every package, so they ask Steam again and
+    // fail on the withheld ones.
+    let answer = async {
+        let packages = server.request(PRODUCT_REQUEST).await;
+        let response = proto::ProductResponse {
+            packages: vec![package(1, &[730])],
+            unknown_packages: vec![2, 3],
+            ..Default::default()
+        };
+        server.reply(&packages, PRODUCT_RESPONSE, &response).await;
+    };
+    let (acquired, ()) = tokio::join!(client.acquisitions(), answer);
+    let error = acquired.unwrap_err().to_string();
+    assert!(
+        error.contains("backend.steam.cm.packagesUnavailable"),
+        "{error}"
+    );
 }
 
 #[tokio::test]

@@ -499,14 +499,19 @@ impl Client {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clear();
-        let (games, licensed) = tokio::join!(self.cm.owned_games(), self.licensed_content());
+        let (games, licensed) = tokio::join!(self.cm.owned_games(), self.readable_licenses());
         let mut games = games?;
+        let unplayed = match licensed {
+            Ok(licensed) => self.unplayed_games(&licensed, &games).await,
+            Err(error) => Err(error),
+        };
         // The owned games alone still make a library.
-        if let Ok(licensed) = licensed
-            && let Ok(unplayed) = self.unplayed_games(&licensed, &games).await
-        {
-            games.extend(unplayed);
-            games.sort_by(crate::cm::library_order);
+        match unplayed {
+            Ok(unplayed) => {
+                games.extend(unplayed);
+                games.sort_by(crate::cm::library_order);
+            }
+            Err(error) => eprintln!("steam-kit: library leaves out never-played games: {error}"),
         }
         Ok(games)
     }
@@ -529,6 +534,11 @@ impl Client {
         // stay out.
         let mut games = Vec::new();
         for app in self.cm.readable_app_infos(&missing).await? {
+            // Steam's free license also grants Valve's Spacewar test app,
+            // which the store does not sell.
+            if licensed.free_apps.contains(&app.app_id) && !app.on_store() {
+                continue;
+            }
             let app = Arc::new(app);
             self.remember_app(&app);
             games.extend(app.unplayed_game());
@@ -595,15 +605,32 @@ impl Client {
             .insert(app.app_id, (Instant::now(), Arc::clone(app)));
     }
 
-    /// One caller expands the licenses; the others wait for its catalog.
+    /// Every package the licenses grant, which downloads need.
     /// Player.GetOwnedGames is presentation data, not proof of depot/DLC rights.
     async fn licensed_content(&self) -> Result<Arc<ContentLicenses>, ClientError> {
+        let owned = self.readable_licenses().await?;
+        owned.complete()?;
+        Ok(owned)
+    }
+
+    /// The licenses as far as Steam describes them: a package it withholds
+    /// costs the library only its own games. One caller expands them; the
+    /// others wait for its catalog, which only a complete expansion becomes,
+    /// so rights missing a package ask Steam again.
+    async fn readable_licenses(&self) -> Result<Arc<ContentLicenses>, ClientError> {
         let mut catalog = self.catalog.lock().await;
         if let Some(owned) = catalog.as_ref() {
             return Ok(Arc::clone(owned));
         }
         let owned = Arc::new(self.cm.content_licenses().await?);
-        *catalog = Some(Arc::clone(&owned));
+        if owned.complete().is_ok() {
+            *catalog = Some(Arc::clone(&owned));
+        } else {
+            eprintln!(
+                "steam-kit: licenses leave out the packages Steam withholds: {:?} {:?}",
+                owned.unknown_packages, owned.withheld_packages
+            );
+        }
         Ok(owned)
     }
 

@@ -54,6 +54,11 @@ const CONNECT_STAGGER: Duration = Duration::from_secs(1);
 pub(crate) const PROFILE_TIMEOUT: Duration = Duration::from_secs(5);
 /// Apps and packages PICS accepts in one access-token and product request.
 pub(crate) const PICS_BATCH: usize = 50;
+/// Steam's free license, package 0, which every account holds. The older free
+/// games, such as Team Fortress 2, come with it, and Player.GetOwnedGames
+/// lists them only once the account played them. Steam withholding it costs
+/// only those games, not the other licenses.
+const FREE_LICENSE: u32 = 0;
 /// Requests one query keeps in flight at once; the worker routes each reply
 /// to its own job, so they need not wait for each other.
 pub(crate) const CONCURRENT_REQUESTS: usize = 4;
@@ -640,7 +645,10 @@ impl SteamConnection {
         Ok(games)
     }
 
-    /// Preserve both namespaces when expanding active PICS packages.
+    /// Preserve both namespaces when expanding active PICS packages. The
+    /// packages Steam does not describe to the account are left out and
+    /// listed in the rights, except its free license, which costs only its
+    /// own games.
     pub async fn content_licenses(&self) -> Result<ContentLicenses, CmError> {
         self.ensure_logged_on()?;
         // Steam pushes the license list after logon, and again when it changes.
@@ -658,7 +666,7 @@ impl SteamConnection {
         let active = || {
             list.licenses
                 .iter()
-                .filter(|license| license.package_id != 0 && license.flags & INACTIVE == 0)
+                .filter(|license| license.flags & INACTIVE == 0)
         };
         // A family member lends a game through a license of their own. The
         // account ID is the Steam ID's low 32 bits.
@@ -691,25 +699,25 @@ impl SteamConnection {
         let mut rights = ContentLicenses::default();
         while let Some(response) = batches.next().await {
             let response = response?;
-            if !response.unknown_packages.is_empty() {
-                return Err(CmError::Protocol(
-                    "backend.steam.cm.packagesUnavailable".into(),
-                ));
-            }
+            let unknown = response.unknown_packages.into_iter();
+            let unknown = unknown.filter(|id| *id != FREE_LICENSE);
+            rights.unknown_packages.extend(unknown);
             for package in response.packages {
                 if package.missing_token || package.buffer.is_empty() {
-                    return Err(CmError::Protocol(
-                        "backend.steam.cm.incompletePackageAccess".into(),
-                    ));
+                    if package.id != FREE_LICENSE {
+                        rights.withheld_packages.push(package.id);
+                    }
+                    continue;
                 }
                 let tree = kv::package(&package.buffer)?;
                 let name = package.id.to_string();
                 let root = tree.get(&name).unwrap_or(&tree);
-                rights.extend_package(
-                    root,
-                    created.get(&package.id).copied(),
-                    own.contains(&package.id),
-                );
+                let created = created.get(&package.id).copied();
+                if package.id == FREE_LICENSE {
+                    rights.extend_free_license(root, created);
+                } else {
+                    rights.extend_package(root, created, own.contains(&package.id));
+                }
             }
         }
         Ok(rights)
