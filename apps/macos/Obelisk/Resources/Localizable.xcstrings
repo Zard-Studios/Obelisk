@@ -291,6 +291,12 @@
             "state": "translated",
             "value": "Steam pour Windows n’est pas connecté. Connectez-le dans les réglages de lancement de ce jeu."
           }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam per Windows non ha effettuato l'accesso. Accedi dalle impostazioni di avvio di questo gioco."
+          }
         }
       }
     },
@@ -307,6 +313,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Steam pour Windows n’a pas accepté la connexion. Réessayez."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam per Windows non ha accettato l'accesso. Riprova."
           }
         }
       }
@@ -20272,6 +20284,12 @@
             "state": "translated",
             "value": "Client Steam"
           }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Client Steam"
+          }
         }
       }
     },
@@ -20285,6 +20303,12 @@
           }
         },
         "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk"
+          }
+        },
+        "it": {
           "stringUnit": {
             "state": "translated",
             "value": "Obelisk"
@@ -20306,6 +20330,12 @@
             "state": "translated",
             "value": "Steam pour Windows"
           }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam per Windows"
+          }
         }
       }
     },
@@ -20322,6 +20352,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "La connexion Steam d’Obelisk lance le jeu."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connessione Steam di Obelisk avvia il gioco."
           }
         }
       }
@@ -20340,6 +20376,12 @@
             "state": "translated",
             "value": "Steam pour Windows de Valve lance le jeu dans Wine, comme l’exigent les serveurs protégés par VAC. Connectez-vous-y une fois."
           }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam per Windows di Valve avvia il gioco in Wine, come richiedono i server protetti da VAC. Accedi una sola volta."
+          }
         }
       }
     },
@@ -20356,6 +20398,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Compte de Steam pour Windows"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Account di Steam per Windows"
           }
         }
       }
@@ -20374,6 +20422,12 @@
             "state": "translated",
             "value": "Vérification…"
           }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verifica in corso…"
+          }
         }
       }
     },
@@ -20390,6 +20444,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connecté en tant que %@."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accesso effettuato come %@."
           }
         }
       }
@@ -20408,6 +20468,12 @@
             "state": "translated",
             "value": "Non connecté. Steam pour Windows a besoin de sa propre connexion avant que le jeu ne démarre."
           }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accesso non effettuato. Steam per Windows ha bisogno di un accesso suo prima che il gioco si avvii."
+          }
         }
       }
     },
@@ -20424,6 +20490,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Se connecter…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accedi…"
           }
         }
       }
@@ -20442,6 +20514,12 @@
             "state": "translated",
             "value": "Changer de compte…"
           }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cambia account…"
+          }
         }
       }
     },
@@ -20458,6 +20536,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Se connecter à Steam pour Windows"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accedi a Steam per Windows"
           }
         }
       }
@@ -20476,6 +20560,12 @@
             "state": "translated",
             "value": "Steam pour Windows a sa propre connexion, distincte de celle d’Obelisk. Sa fenêtre ne peut pas s’afficher dans Wine : Obelisk le connecte pour vous."
           }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam per Windows ha un accesso suo, separato da quello di Obelisk. La sua finestra non può comparire in Wine, quindi Obelisk accede per te."
+          }
         }
       }
     },
@@ -20492,6 +20582,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connexion de Steam pour Windows… La première fois, Steam se met d’abord à jour, ce qui peut prendre quelques minutes."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accesso a Steam per Windows in corso… La prima volta Steam si aggiorna da solo, e può servire qualche minuto."
           }
         }
       }
