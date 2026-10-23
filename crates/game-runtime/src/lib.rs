@@ -144,6 +144,12 @@ pub enum Error {
     /// The Windows games' prefixes are moving, or their disk is not connected.
     #[error("backend.runtime.prefixesUnavailable")]
     PrefixesUnavailable,
+    /// Valve's Windows Steam starts the game, and is signed in to no account.
+    #[error("backend.steam.windowsSteam.signInRequired")]
+    WindowsSteamSignedOut,
+    /// Valve's Windows Steam did not take the account's login.
+    #[error("backend.steam.windowsSteam.signInFailed")]
+    WindowsSteamSignIn,
 }
 impl From<std::io::Error> for Error {
     fn from(_: std::io::Error) -> Self {

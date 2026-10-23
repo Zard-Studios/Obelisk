@@ -7,7 +7,14 @@
 //! with what it keeps in the prefix, and keeps the game's Cloud saves itself.
 use crate::{Error, supervisor::Target, wine};
 use obelisk_core::launch::LaunchTarget;
-use std::{fmt::Write as _, fs, io::Write as _, path::Path};
+use std::{
+    fmt::Write as _,
+    fs,
+    io::Write as _,
+    path::Path,
+    process::Stdio,
+    time::{Duration, Instant},
+};
 
 /// Where Steam installs itself in a prefix, and keeps its default library.
 const STEAM: &str = "drive_c/Program Files (x86)/Steam";
@@ -219,6 +226,209 @@ pub(super) fn target(
         after,
         crate::native::environment(home),
     )
+}
+
+/// Where Steam keeps the accounts it signs in to, in its folder.
+const LOGIN_USERS: &str = "config/loginusers.vdf";
+/// Where Steam keeps their login tokens, encrypted for the Windows user
+/// CrossOver's Wine runs as.
+const LOGIN_TOKENS: &str = "drive_c/users/crossover/AppData/Local/Steam/local.vdf";
+/// Steam's DevTools, on the Mac's loopback while `-cef-enable-debugging`
+/// asks for them.
+const DEVTOOLS: &str = "http://127.0.0.1:8080";
+/// The page of Steam's own interface whose script holds `SteamClient`.
+const SHARED_CONTEXT: &str = "SharedJSContext";
+/// Where Steam's interface pages load from.
+const STEAM_INTERFACE: &str = "https://steamloopback.host/";
+/// Steam's first start in a prefix updates it, which can take minutes under
+/// Rosetta.
+const START_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+/// How long Steam gets to keep the login it signed in with.
+const KEEP_TIMEOUT: Duration = Duration::from_secs(120);
+/// `EResult::OK`, as `SetLoginToken` answers it.
+const SIGNED_IN: i64 = 1;
+
+/// The account Valve's Windows Steam in `prefix` signs in to by itself: one
+/// whose login it remembers, with a login token kept. The account Steam last
+/// signed in to comes first.
+pub(crate) fn account(prefix: &Path) -> Option<String> {
+    if !prefix.join(LOGIN_TOKENS).is_file() {
+        return None;
+    }
+    let users = fs::read_to_string(prefix.join(STEAM).join(LOGIN_USERS)).ok()?;
+    remembered_account(&users)
+}
+
+/// The account `users`, Steam's loginusers.vdf, remembers the login of,
+/// the most recent first.
+fn remembered_account(users: &str) -> Option<String> {
+    let mut accounts = Vec::new();
+    let (mut name, mut remembered, mut recent) = (None, false, false);
+    for line in users.lines() {
+        let fields: Vec<&str> = line.split('"').skip(1).step_by(2).collect();
+        match fields.as_slice() {
+            ["AccountName", value] => name = Some((*value).to_owned()),
+            ["RememberPassword", value] => remembered = *value == "1",
+            ["MostRecent", value] => recent = *value == "1",
+            _ if line.trim() == "}" => {
+                if let (Some(account), true) = (name.take(), remembered) {
+                    accounts.push((recent, account));
+                }
+                (remembered, recent) = (false, false);
+            }
+            _ => {}
+        }
+    }
+    accounts.sort_by_key(|(recent, _)| !recent);
+    accounts.into_iter().next().map(|(_, account)| account)
+}
+
+/// Signs Valve's Windows Steam in config's readied prefix in to
+/// `account_name`'s account with `refresh_token`, a SteamClient login token
+/// Obelisk signed in for it, as Steam's own sign-in window would: Steam
+/// starts hidden with its DevTools on the loopback, its interface's script
+/// takes the token, and Steam keeps the login once signed in, encrypted its
+/// own way. Steam's window cannot draw in Voile's Wine, so it never shows.
+/// The token reaches no page but Steam's own interface, and no log.
+pub(super) async fn sign_in(
+    config: &wine::Config,
+    home: &Path,
+    account_name: &str,
+    refresh_token: &str,
+) -> Result<(), Error> {
+    let mut steam = wine::command(config, home)?
+        .args([
+            STEAM_EXE,
+            "-silent",
+            "-nofriendsui",
+            "-nochatui",
+            "-cef-disable-gpu",
+            "-cef-disable-gpu-compositing",
+            "-cef-enable-debugging",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    let signed_in = async {
+        let shared = shared_context(START_TIMEOUT).await?;
+        set_login_token(&shared, account_name, refresh_token).await?;
+        // Steam writes the account and its token once its logon succeeds.
+        let deadline = Instant::now() + KEEP_TIMEOUT;
+        while account(&config.prefix).as_deref() != Some(account_name) {
+            if Instant::now() >= deadline {
+                return Err(Error::WindowsSteamSignIn);
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        Ok(())
+    }
+    .await;
+    shut_down(config, home).await;
+    let _ = steam.kill();
+    let _ = steam.wait();
+    wine::stop(config);
+    signed_in
+}
+
+/// The DevTools address of Steam's interface script once Steam serves it,
+/// within `timeout`.
+async fn shared_context(timeout: Duration) -> Result<String, Error> {
+    #[derive(serde::Deserialize)]
+    struct Page {
+        title: String,
+        url: String,
+        #[serde(rename = "webSocketDebuggerUrl")]
+        socket: Option<String>,
+    }
+    let client = reqwest::Client::new();
+    let deadline = Instant::now() + timeout;
+    loop {
+        let pages = async {
+            client
+                .get(format!("{DEVTOOLS}/json"))
+                .timeout(Duration::from_secs(5))
+                .send()
+                .await?
+                .json::<Vec<Page>>()
+                .await
+        }
+        .await
+        .unwrap_or_default();
+        // Only Steam's own page on the loopback ever receives the token.
+        let found = pages.into_iter().find_map(|page| {
+            (page.title == SHARED_CONTEXT && page.url.starts_with(STEAM_INTERFACE))
+                .then_some(page.socket?)
+                .filter(|socket| socket.starts_with("ws://127.0.0.1:8080/"))
+        });
+        if let Some(socket) = found {
+            return Ok(socket);
+        }
+        if Instant::now() >= deadline {
+            return Err(Error::WindowsSteamSignIn);
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+}
+
+/// Hands Steam's interface script `refresh_token`, as Steam's sign-in page
+/// does once its own sign-in succeeds, and waits for Steam's answer.
+async fn set_login_token(
+    socket: &str,
+    account_name: &str,
+    refresh_token: &str,
+) -> Result<(), Error> {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+    let expression = format!(
+        "SteamClient.Auth.SetLoginToken({}, {}).then(answer => ({{ result: answer.result }}))",
+        serde_json::to_string(refresh_token).map_err(|_| Error::WindowsSteamSignIn)?,
+        serde_json::to_string(account_name).map_err(|_| Error::WindowsSteamSignIn)?,
+    );
+    let request = serde_json::json!({
+        "id": 1,
+        "method": "Runtime.evaluate",
+        "params": { "expression": expression, "awaitPromise": true, "returnByValue": true },
+    });
+    let answer = tokio::time::timeout(Duration::from_secs(60), async {
+        let (mut stream, _) = tokio_tungstenite::connect_async(socket).await.ok()?;
+        stream
+            .send(Message::Text(request.to_string().into()))
+            .await
+            .ok()?;
+        while let Some(Ok(message)) = stream.next().await {
+            let Message::Text(text) = message else {
+                continue;
+            };
+            let reply: serde_json::Value = serde_json::from_str(&text).ok()?;
+            if reply["id"] == 1 {
+                let _ = stream.close(None).await;
+                return reply["result"]["result"]["value"]["result"].as_i64();
+            }
+        }
+        None
+    })
+    .await
+    .ok()
+    .flatten();
+    match answer {
+        Some(SIGNED_IN) => Ok(()),
+        _ => Err(Error::WindowsSteamSignIn),
+    }
+}
+
+/// Asks Steam to shut down, as its menu does, and gives it time to.
+async fn shut_down(config: &wine::Config, home: &Path) {
+    let Ok(mut command) = wine::command(config, home) else {
+        return;
+    };
+    let _ = command
+        .args([STEAM_EXE, "-shutdown"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    tokio::time::sleep(Duration::from_secs(10)).await;
 }
 
 #[cfg(test)]

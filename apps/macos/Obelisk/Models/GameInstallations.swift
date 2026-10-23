@@ -190,6 +190,20 @@ protocol InstallationsBackend<Store>: AnyObject {
     /// installation, and returns them as its next launch applies them.
     func setLaunchSettings(_ receipt: InstallationReceipt<Store.GameID>, choices: LaunchChoices) async throws
         -> LaunchSettings?
+    /// The account Valve's Windows Steam signs in to by itself to start
+    /// `receipt`'s Steam game; nil while it would ask.
+    func windowsSteamAccount(_ receipt: InstallationReceipt<Store.GameID>) async -> String?
+    /// Signs Valve's Windows Steam, which starts `receipt`'s Steam game, in to
+    /// the account of `credentials`, a sign-in made for it alone.
+    func signInWindowsSteam(_ receipt: InstallationReceipt<Store.GameID>, credentials: SteamCredentials) async throws
+}
+
+/// Only Steam games start through Valve's Windows Steam.
+extension InstallationsBackend {
+    func windowsSteamAccount(_ receipt: InstallationReceipt<Store.GameID>) async -> String? { nil }
+    func signInWindowsSteam(_ receipt: InstallationReceipt<Store.GameID>, credentials: SteamCredentials) async throws {
+        throw Store.failure(Store.invalidSession)
+    }
 }
 
 /// One storefront's installed games and the actions on them, as Rust keeps
@@ -650,6 +664,20 @@ final class GameInstallations<Store: InstallationStorefront> {
 }
 
 extension GameInstallations where Store == SteamGames {
+    /// The account Valve's Windows Steam signs in to by itself to start an
+    /// installed game; nil while it would ask.
+    func windowsSteamAccount(_ receipt: Receipt) async -> String? {
+        guard let backend, receipts.contains(receipt) else { return nil }
+        return await backend.windowsSteamAccount(receipt)
+    }
+
+    /// Signs Valve's Windows Steam, which starts an installed game, in to the
+    /// account of `credentials`.
+    func signInWindowsSteam(_ receipt: Receipt, credentials: SteamCredentials) async throws {
+        guard let backend, receipts.contains(receipt) else { throw SteamGames.failure(SteamGames.invalidSession) }
+        try await backend.signInWindowsSteam(receipt, credentials: credentials)
+    }
+
     /// Launches a Steam installation as `launch` does, its game joining
     /// `invite`, a friend's lobby or `connect` string.
     func join(_ receipt: Receipt, invite: SteamGameInvite) {
@@ -782,6 +810,13 @@ final class RustInstallations<Store: InstallationStorefront>: InstallationsBacke
     func setLaunchSettings(_ receipt: InstallationReceipt<Store.GameID>, choices: LaunchChoices) async throws
         -> LaunchSettings? {
         do { return try await core.setLaunchSettings(installation: receipt.id, choices: choices) }
+        catch { throw GameSessions<Store>.translated(error) }
+    }
+    func windowsSteamAccount(_ receipt: InstallationReceipt<Store.GameID>) async -> String? {
+        await core.windowsSteamAccount(installation: receipt.id)
+    }
+    func signInWindowsSteam(_ receipt: InstallationReceipt<Store.GameID>, credentials: SteamCredentials) async throws {
+        do { try await core.signInWindowsSteam(installation: receipt.id, credentials: credentials) }
         catch { throw GameSessions<Store>.translated(error) }
     }
 

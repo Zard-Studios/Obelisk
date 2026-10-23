@@ -140,6 +140,10 @@ pub fn prepare(
                 prefix: windows.prefix(),
             };
             let wine = windows.ready(locations, target, &storefront)?;
+            // Steam would wait, hidden, for a sign-in no one sees.
+            if windows_steam::account(&wine.prefix).is_none() {
+                return Err(Error::WindowsSteamSignedOut);
+            }
             let launched =
                 windows_steam::target(&wine, &receipt.wine_game(), target, app_id, home)?;
             (Some(wine), launched, None)
@@ -188,6 +192,55 @@ pub fn prepare(
 /// than Obelisk's Steam host.
 pub(crate) fn windows_steam(wine: Option<&crate::wine::Config>) -> bool {
     wine.is_some_and(|wine| wine.settings.steam_client == SteamClient::Windows)
+}
+
+/// The installation `receipt` names when Valve's Windows Steam starts its
+/// game, as its Launch settings ask.
+fn windows_steam_installation(
+    locations: &crate::Locations,
+    receipt: &Receipt<Steam>,
+) -> Result<Option<crate::wine::Installation>, Error> {
+    Ok(receipt
+        .windows(locations)?
+        .filter(|windows| windows.steam_client() == SteamClient::Windows))
+}
+
+/// The account Valve's Windows Steam signs in to by itself to start the game
+/// `receipt` names; `None` while it would ask, or when Obelisk's Steam
+/// client starts the game.
+pub fn windows_steam_account(
+    locations: &crate::Locations,
+    receipt: &Receipt<Steam>,
+) -> Result<Option<String>, Error> {
+    Ok(windows_steam_installation(locations, receipt)?
+        .and_then(|windows| windows_steam::account(windows.prefix())))
+}
+
+/// Signs Valve's Windows Steam, which starts the game `receipt` names, in to
+/// `account_name`'s account with `refresh_token`, a SteamClient login token
+/// Obelisk signed in for it alone. Its prefix is readied first, and Steam
+/// installed there when it is missing.
+pub async fn sign_in_windows_steam(
+    locations: crate::Locations,
+    receipt: Receipt<Steam>,
+    account_name: String,
+    refresh_token: String,
+) -> Result<(), Error> {
+    let refresh_token = zeroize::Zeroizing::new(refresh_token);
+    let readied = locations.clone();
+    let config = tokio::task::spawn_blocking(move || {
+        let windows =
+            windows_steam_installation(&readied, &receipt)?.ok_or(Error::WindowsSteamSignIn)?;
+        let storefront = windows_steam::Prefix {
+            install: Path::new(&receipt.directory),
+            app_id: receipt.product.app_id,
+            prefix: windows.prefix(),
+        };
+        windows.ready_prefix(&readied, &storefront)
+    })
+    .await
+    .map_err(|_| Error::StartFailed)??;
+    windows_steam::sign_in(&config, &locations.home, &account_name, &refresh_token).await
 }
 
 /// The Mac game `target` names inside `install`, and its Steam API library.

@@ -492,6 +492,21 @@ pub(crate) fn launcher_target(
     })
 }
 
+/// Rosetta's Wine, as every command of config's prefix runs it, under the
+/// Mac `home`; the caller adds the program and its arguments. Rosetta's Wine
+/// only.
+pub(crate) fn command(config: &Config, home: &Path) -> Result<Command, Error> {
+    if config.settings.engine != Engine::Rosetta {
+        return Err(Error::NotExecutable);
+    }
+    let mut command = Command::new(rosetta::wine(config));
+    command
+        .env_clear()
+        .envs(crate::native::environment(home))
+        .envs(rosetta::environment(config));
+    Ok(command)
+}
+
 /// A file the game reads, in a private folder that lives as long as the
 /// returned TempDir, and its Windows path. Rosetta's Wine reads it on the
 /// Mac's disk, through its Z: drive; the engine's guest, which cannot see
@@ -603,6 +618,19 @@ impl Installation {
         let config = self.runtime(locations)?;
         let target = self.settings.started(&self.install, target);
         prepare(&config, locations, &self.install, &target, storefront)?;
+        Ok(config)
+    }
+
+    /// Readies the prefix, with `storefront`'s additions, for what runs there
+    /// besides the game, such as the storefront's own client, and returns how
+    /// its programs run.
+    pub(crate) fn ready_prefix<S: Storefront>(
+        &self,
+        locations: &crate::Locations,
+        storefront: &S,
+    ) -> Result<Config, Error> {
+        let config = self.runtime(locations)?;
+        config.adapter().ready(&config, locations, storefront)?;
         Ok(config)
     }
 
