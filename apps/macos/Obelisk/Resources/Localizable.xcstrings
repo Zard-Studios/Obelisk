@@ -20224,6 +20224,91 @@
         }
       }
     },
+    "ui.launch_settings.steam_client": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam Client"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Client Steam"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.steam_client.obelisk": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.steam_client.windows": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam for Windows"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam pour Windows"
+          }
+        }
+      }
+    },
+    "ui.launch_settings.steam_client.obelisk_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obelisk's own Steam connection starts the game."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion Steam d’Obelisk lance le jeu."
+          }
+        }
+      }
+    },
+    "ui.launch_settings.steam_client.windows_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Valve's Steam for Windows starts the game in Wine, as servers secured by VAC require. Sign in to it once."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steam pour Windows de Valve lance le jeu dans Wine, comme l’exigent les serveurs protégés par VAC. Connectez-vous-y une fois."
+          }
+        }
+      }
+    },
     "ui.launch_settings.next_launch": {
       "extractionState": "manual",
       "localizations": {

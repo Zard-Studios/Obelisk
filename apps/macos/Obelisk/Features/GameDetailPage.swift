@@ -134,6 +134,7 @@ struct GameDetailPage<Model: LibraryStorefront, HeroArtwork: View, Cover: View, 
                             launchSettings: receipt.flatMap { receipt in
                                 receipt.platform == .mac ? nil : {
                                     launchSettings = LaunchSettingsModel(
+                                        offersSteamClient: Model.Store.storefront == .steam,
                                         load: { [installations] in try await installations.launchSettings(receipt) },
                                         save: { [installations] in
                                             try await installations.setLaunchSettings(receipt, choices: $0)

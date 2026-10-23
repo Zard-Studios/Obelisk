@@ -9,9 +9,13 @@ final class LaunchSettingsModel: Identifiable {
     private(set) var error: String?
     @ObservationIgnored private let load: () async throws -> LaunchSettings?
     @ObservationIgnored private let save: (LaunchChoices) async throws -> LaunchSettings?
+    /// A Steam game, which may start through Valve's Windows Steam.
+    let offersSteamClient: Bool
 
-    init(load: @escaping () async throws -> LaunchSettings?,
+    init(offersSteamClient: Bool = false,
+         load: @escaping () async throws -> LaunchSettings?,
          save: @escaping (LaunchChoices) async throws -> LaunchSettings?) {
+        self.offersSteamClient = offersSteamClient
         self.load = load
         self.save = save
     }
@@ -126,7 +130,13 @@ struct LaunchSettingsSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     ObeliskCard { argumentsRow }
-                    ObeliskCard { engineRow(settings) }
+                    ObeliskCard {
+                        engineRow(settings)
+                        if model.offersSteamClient && settings.engine == .rosetta {
+                            ObeliskCardDivider()
+                            steamClientRow(settings)
+                        }
+                    }
                     SheetSection(title: L10n.string("ui.launch_settings.cpu")) {
                         ObeliskCard { translatorRow }
                     }
@@ -193,6 +203,26 @@ struct LaunchSettingsSheet: View {
                 ForEach(settings.engines, id: \.engine) { offer in
                     Text(marked(Self.name(of: offer.engine), isDefault: offer.engine == settings.defaultEngine))
                         .tag(offer.engine)
+                }
+            }
+        }
+    }
+
+    /// Valve's Windows Steam starts a Windows Steam game in Wine, where
+    /// Rosetta's Wine runs it: VAC-secured servers accept it then.
+    private func steamClientRow(_ settings: LaunchSettings) -> some View {
+        ObeliskRow(title: L10n.string("ui.launch_settings.steam_client")) {
+            SymbolTile(name: "shield.lefthalf.filled", colors: TileColors.blue)
+        } detail: {
+            Text(Self.detail(of: settings.steamClient))
+        } accessory: {
+            GlassMenuPicker(title: L10n.string("ui.launch_settings.steam_client"),
+                            value: marked(Self.name(of: settings.steamClient), isDefault: settings.steamClient == .obelisk),
+                            selection: Binding(get: { settings.steamClient },
+                                               set: { client in model.choose { $0.steamClient = client } }),
+                            identifier: "launch-settings-steam-client") {
+                ForEach([LaunchSteamClient.obelisk, .windows], id: \.self) { client in
+                    Text(marked(Self.name(of: client), isDefault: client == .obelisk)).tag(client)
                 }
             }
         }
@@ -290,6 +320,20 @@ struct LaunchSettingsSheet: View {
 
     private func marked(_ name: String, isDefault: Bool) -> String {
         isDefault ? L10n.string("ui.launch_settings.default", name) : name
+    }
+
+    static func name(of client: LaunchSteamClient) -> String {
+        switch client {
+        case .obelisk: L10n.string("ui.launch_settings.steam_client.obelisk")
+        case .windows: L10n.string("ui.launch_settings.steam_client.windows")
+        }
+    }
+
+    static func detail(of client: LaunchSteamClient) -> String {
+        switch client {
+        case .obelisk: L10n.string("ui.launch_settings.steam_client.obelisk_detail")
+        case .windows: L10n.string("ui.launch_settings.steam_client.windows_detail")
+        }
     }
 
     static func name(of engine: LaunchEngine) -> String {
