@@ -25,6 +25,9 @@ pub struct LaunchSettings {
     pub choices: LaunchChoices,
     /// The engine the game runs on without choices.
     pub default_engine: LaunchEngine,
+    /// The Steam client a Steam game starts through on Rosetta's Wine
+    /// without choices.
+    pub default_steam_client: LaunchSteamClient,
     /// Every engine, with what it offers and how the game runs there
     /// without choices.
     pub engines: Vec<LaunchEngineOffer>,
@@ -114,6 +117,7 @@ impl From<View> for LaunchSettings {
             steam_client: view.settings.steam_client.into(),
             choices: view.choices.into(),
             default_engine: view.default_engine.into(),
+            default_steam_client: view.default_steam_client.into(),
             engines: ENGINES
                 .iter()
                 .zip(view.default_graphics)

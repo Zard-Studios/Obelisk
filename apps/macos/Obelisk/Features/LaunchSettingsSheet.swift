@@ -162,12 +162,14 @@ struct WindowsSteamSignInSheet: View {
     let model: WindowsSteamSignInModel
     let gameName: String
     let finished: () -> Void
+    /// The player closed it before signing in.
+    var closed: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             SheetHeader(title: L10n.string("ui.launch_settings.windows_steam_sign_in_title"), subtitle: gameName,
-                        symbol: "shield.lefthalf.filled", colors: TileColors.blue, close: { dismiss() },
+                        symbol: "shield.lefthalf.filled", colors: TileColors.blue, close: { closed(); dismiss() },
                         closeIdentifier: "windows-steam-sign-in-close")
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -373,12 +375,12 @@ struct LaunchSettingsSheet: View {
             Text(Self.detail(of: settings.steamClient))
         } accessory: {
             GlassMenuPicker(title: L10n.string("ui.launch_settings.steam_client"),
-                            value: marked(Self.name(of: settings.steamClient), isDefault: settings.steamClient == .obelisk),
+                            value: marked(Self.name(of: settings.steamClient), isDefault: settings.steamClient == settings.defaultSteamClient),
                             selection: Binding(get: { settings.steamClient },
                                                set: { client in model.choose { $0.steamClient = client } }),
                             identifier: "launch-settings-steam-client") {
                 ForEach([LaunchSteamClient.obelisk, .windows], id: \.self) { client in
-                    Text(marked(Self.name(of: client), isDefault: client == .obelisk)).tag(client)
+                    Text(marked(Self.name(of: client), isDefault: client == settings.defaultSteamClient)).tag(client)
                 }
             }
         }

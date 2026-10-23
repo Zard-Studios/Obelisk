@@ -356,7 +356,7 @@ final class DeveloperModals {
         return LaunchSettings(engine: engine, graphics: graphics, rayTracing: choices.rayTracing ?? false,
                               performanceHud: choices.performanceHud,
                               steamClient: engine == .rosetta ? choices.steamClient ?? .obelisk : .obelisk,
-                              choices: choices, defaultEngine: .rosetta,
+                              choices: choices, defaultEngine: .rosetta, defaultSteamClient: .obelisk,
                               engines: engines)
     }
 

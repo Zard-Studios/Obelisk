@@ -7,7 +7,7 @@ final class LaunchSettingsModelTests: XCTestCase {
         LaunchSettings(
             engine: engine, graphics: engine == .rosetta ? .d3dMetal : .dxmt, rayTracing: true,
             performanceHud: choices.performanceHud, steamClient: choices.steamClient ?? .obelisk,
-            choices: choices, defaultEngine: .rosetta,
+            choices: choices, defaultEngine: .rosetta, defaultSteamClient: .obelisk,
             engines: [
                 LaunchEngineOffer(
                     engine: .rosetta, translator: .rosetta, defaultGraphics: .d3dMetal,
